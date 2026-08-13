@@ -11,23 +11,21 @@
 
 ### Promotional Text
 
-Monitor CPU, GPU, memory, disk, network, thermal state, and battery from the menu bar. Choose the details you need and sample them only on demand.
+Monitor CPU, memory, network, thermal state, and battery from the menu bar. Choose the details you need and sample them only on demand.
 
 ### Description
 
 ColdHot is a lightweight, native macOS performance monitor that lives in the menu bar.
 
-Click the menu bar icon to see CPU, GPU, memory, disk, network, thermal state, and battery information in one quiet, focused panel. Top-level metrics stay concise, while details such as per-core utilization, memory composition, network packets, and battery health are independently selectable and sampled only while their card is expanded.
+Click the menu bar icon to see CPU, memory, network, thermal state, and battery information in one quiet, focused panel. Top-level metrics stay concise, while details such as per-core utilization, memory composition, network packets, and battery health are independently selectable and sampled only while their card is expanded.
 
 Highlights:
 
 • Total CPU usage, load averages, and per-core utilization
-• GPU device utilization and display information
 • Memory pressure, composition, and swap
-• Disk capacity, live throughput, and IOPS
 • Network interfaces, live speed, packets, and totals
 • macOS system thermal pressure
-• Battery level, health, cycle count, time remaining, and electrical information
+• Battery level, health, and time remaining
 • 1, 2, or 5 second refresh intervals
 • Persistent, independent choices for metric groups and details
 

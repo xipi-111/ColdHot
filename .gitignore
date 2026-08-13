@@ -4,6 +4,7 @@ DerivedData/
 .analyze/
 .swiftpm/
 dist/
+AppStore/.screenshot-build/
 build/
 *.xcarchive
 *.xcresult
