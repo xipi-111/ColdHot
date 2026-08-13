@@ -1,0 +1,6 @@
+#include "ReleaseCommon.xcconfig"
+
+PRODUCT_BUNDLE_IDENTIFIER = com.xipiyoung.ColdHot
+ENABLE_APP_SANDBOX = NO
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) DIRECT_DISTRIBUTION
+

@@ -1,0 +1,7 @@
+#include "ReleaseCommon.xcconfig"
+
+PRODUCT_BUNDLE_IDENTIFIER = com.xipiyoung.ColdHot.AppStore
+ENABLE_APP_SANDBOX = YES
+CODE_SIGN_ENTITLEMENTS = ColdHot/Resources/ColdHot-AppStore.entitlements
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) APP_STORE
+

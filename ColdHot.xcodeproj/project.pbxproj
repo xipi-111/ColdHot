@@ -1,0 +1,454 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 60;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* ColdHotApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* ColdHotApp.swift */; };
+		A10000000000000000000002 /* MetricKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* MetricKind.swift */; };
+		A10000000000000000000003 /* MonitorSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* MonitorSettings.swift */; };
+		A10000000000000000000004 /* PerformanceSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* PerformanceSnapshot.swift */; };
+		A10000000000000000000005 /* SystemSampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* SystemSampler.swift */; };
+		A10000000000000000000006 /* PerformanceMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* PerformanceMonitor.swift */; };
+		A10000000000000000000007 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* DashboardView.swift */; };
+		A10000000000000000000008 /* MetricRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000008 /* MetricRow.swift */; };
+		A10000000000000000000009 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* SettingsView.swift */; };
+		A1000000000000000000000A /* DockDelayController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000A /* DockDelayController.swift */; };
+		A1000000000000000000000B /* SMCPowerReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000B /* SMCPowerReader.swift */; };
+		A1000000000000000000000C /* HIDTemperatureReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000C /* HIDTemperatureReader.swift */; };
+		A1000000000000000000000D /* BuildVariant.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000D /* BuildVariant.swift */; };
+		A1000000000000000000000E /* PrivacyPolicyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000E /* PrivacyPolicyView.swift */; };
+		A1000000000000000000000F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000F /* Assets.xcassets */; };
+		A10000000000000000000010 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* PrivacyInfo.xcprivacy */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		A20000000000000000000000 /* ColdHot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ColdHot.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000000000000000000001 /* ColdHotApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColdHotApp.swift; sourceTree = "<group>"; };
+		A20000000000000000000002 /* MetricKind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricKind.swift; sourceTree = "<group>"; };
+		A20000000000000000000003 /* MonitorSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonitorSettings.swift; sourceTree = "<group>"; };
+		A20000000000000000000004 /* PerformanceSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceSnapshot.swift; sourceTree = "<group>"; };
+		A20000000000000000000005 /* SystemSampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemSampler.swift; sourceTree = "<group>"; };
+		A20000000000000000000006 /* PerformanceMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceMonitor.swift; sourceTree = "<group>"; };
+		A20000000000000000000007 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		A20000000000000000000008 /* MetricRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricRow.swift; sourceTree = "<group>"; };
+		A20000000000000000000009 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		A2000000000000000000000A /* DockDelayController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockDelayController.swift; sourceTree = "<group>"; };
+		A2000000000000000000000B /* SMCPowerReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SMCPowerReader.swift; sourceTree = "<group>"; };
+		A2000000000000000000000C /* HIDTemperatureReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HIDTemperatureReader.swift; sourceTree = "<group>"; };
+		A2000000000000000000000D /* BuildVariant.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BuildVariant.swift; sourceTree = "<group>"; };
+		A2000000000000000000000E /* PrivacyPolicyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyPolicyView.swift; sourceTree = "<group>"; };
+		A2000000000000000000000F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A20000000000000000000010 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		A20000000000000000000011 /* ColdHot-AppStore.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "ColdHot-AppStore.entitlements"; sourceTree = "<group>"; };
+		A20000000000000000000012 /* ReleaseCommon.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = ReleaseCommon.xcconfig; sourceTree = "<group>"; };
+		A20000000000000000000013 /* DirectRelease.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = DirectRelease.xcconfig; sourceTree = "<group>"; };
+		A20000000000000000000014 /* AppStoreRelease.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = AppStoreRelease.xcconfig; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A30000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A40000000000000000000000 = {
+			isa = PBXGroup;
+			children = (
+				A40000000000000000000001 /* ColdHot */,
+				A40000000000000000000008 /* Configurations */,
+				A40000000000000000000006 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A40000000000000000000001 /* ColdHot */ = {
+			isa = PBXGroup;
+			children = (
+				A40000000000000000000002 /* App */,
+				A40000000000000000000003 /* Models */,
+				A40000000000000000000004 /* Monitoring */,
+				A40000000000000000000005 /* Views */,
+				A40000000000000000000007 /* Resources */,
+			);
+			path = ColdHot;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000002 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000001 /* ColdHotApp.swift */,
+				A2000000000000000000000D /* BuildVariant.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000003 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000002 /* MetricKind.swift */,
+				A20000000000000000000003 /* MonitorSettings.swift */,
+				A20000000000000000000004 /* PerformanceSnapshot.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000004 /* Monitoring */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000005 /* SystemSampler.swift */,
+				A20000000000000000000006 /* PerformanceMonitor.swift */,
+				A2000000000000000000000A /* DockDelayController.swift */,
+				A2000000000000000000000B /* SMCPowerReader.swift */,
+				A2000000000000000000000C /* HIDTemperatureReader.swift */,
+			);
+			path = Monitoring;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000005 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000007 /* DashboardView.swift */,
+				A20000000000000000000008 /* MetricRow.swift */,
+				A20000000000000000000009 /* SettingsView.swift */,
+				A2000000000000000000000E /* PrivacyPolicyView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000007 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				A2000000000000000000000F /* Assets.xcassets */,
+				A20000000000000000000010 /* PrivacyInfo.xcprivacy */,
+				A20000000000000000000011 /* ColdHot-AppStore.entitlements */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000008 /* Configurations */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000012 /* ReleaseCommon.xcconfig */,
+				A20000000000000000000013 /* DirectRelease.xcconfig */,
+				A20000000000000000000014 /* AppStoreRelease.xcconfig */,
+			);
+			path = Configurations;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000006 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000000 /* ColdHot.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A50000000000000000000001 /* ColdHot */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A80000000000000000000001 /* Build configuration list for PBXNativeTarget "ColdHot" */;
+			buildPhases = (
+				A30000000000000000000002 /* Sources */,
+				A30000000000000000000001 /* Frameworks */,
+				A30000000000000000000003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ColdHot;
+			productName = ColdHot;
+			productReference = A20000000000000000000000 /* ColdHot.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A60000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2660;
+				LastUpgradeCheck = 2660;
+				TargetAttributes = {
+					A50000000000000000000001 = {
+						CreatedOnToolsVersion = 26.6;
+					};
+				};
+			};
+			buildConfigurationList = A80000000000000000000000 /* Build configuration list for PBXProject "ColdHot" */;
+			compatibilityVersion = "Xcode 15.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A40000000000000000000000;
+			productRefGroup = A40000000000000000000006 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A50000000000000000000001 /* ColdHot */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A30000000000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1000000000000000000000F /* Assets.xcassets in Resources */,
+				A10000000000000000000010 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A30000000000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000001 /* ColdHotApp.swift in Sources */,
+				A10000000000000000000002 /* MetricKind.swift in Sources */,
+				A10000000000000000000003 /* MonitorSettings.swift in Sources */,
+				A10000000000000000000004 /* PerformanceSnapshot.swift in Sources */,
+				A10000000000000000000005 /* SystemSampler.swift in Sources */,
+				A10000000000000000000006 /* PerformanceMonitor.swift in Sources */,
+				A10000000000000000000007 /* DashboardView.swift in Sources */,
+				A10000000000000000000008 /* MetricRow.swift in Sources */,
+				A10000000000000000000009 /* SettingsView.swift in Sources */,
+				A1000000000000000000000A /* DockDelayController.swift in Sources */,
+				A1000000000000000000000B /* SMCPowerReader.swift in Sources */,
+				A1000000000000000000000C /* HIDTemperatureReader.swift in Sources */,
+				A1000000000000000000000D /* BuildVariant.swift in Sources */,
+				A1000000000000000000000E /* PrivacyPolicyView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		A70000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		A70000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		A70000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = ColdHot;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_LSUIElement = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.xipiyoung.ColdHot;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		A70000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = ColdHot;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_LSUIElement = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.xipiyoung.ColdHot;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		A70000000000000000000005 /* DirectRelease */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A20000000000000000000012 /* ReleaseCommon.xcconfig */;
+			buildSettings = {
+			};
+			name = DirectRelease;
+		};
+		A70000000000000000000006 /* AppStoreRelease */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A20000000000000000000012 /* ReleaseCommon.xcconfig */;
+			buildSettings = {
+			};
+			name = AppStoreRelease;
+		};
+		A70000000000000000000007 /* DirectRelease */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A20000000000000000000013 /* DirectRelease.xcconfig */;
+			buildSettings = {
+			};
+			name = DirectRelease;
+		};
+		A70000000000000000000008 /* AppStoreRelease */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A20000000000000000000014 /* AppStoreRelease.xcconfig */;
+			buildSettings = {
+			};
+			name = AppStoreRelease;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A80000000000000000000000 /* Build configuration list for PBXProject "ColdHot" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A70000000000000000000001 /* Debug */,
+				A70000000000000000000002 /* Release */,
+				A70000000000000000000005 /* DirectRelease */,
+				A70000000000000000000006 /* AppStoreRelease */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A80000000000000000000001 /* Build configuration list for PBXNativeTarget "ColdHot" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A70000000000000000000003 /* Debug */,
+				A70000000000000000000004 /* Release */,
+				A70000000000000000000007 /* DirectRelease */,
+				A70000000000000000000008 /* AppStoreRelease */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A60000000000000000000001 /* Project object */;
+}
