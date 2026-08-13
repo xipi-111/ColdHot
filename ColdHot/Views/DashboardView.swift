@@ -680,32 +680,34 @@ struct DashboardView: View {
 private struct SpinningFanIcon: NSViewRepresentable {
     let rpm: Double
 
-    func makeNSView(context: Context) -> FanImageView {
-        FanImageView()
+    func makeNSView(context: Context) -> FanSpinnerView {
+        FanSpinnerView()
     }
 
-    func updateNSView(_ view: FanImageView, context: Context) {
+    func updateNSView(_ view: FanSpinnerView, context: Context) {
         view.setSpeed(rpm)
     }
 
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: FanImageView, context: Context) -> CGSize? {
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: FanSpinnerView, context: Context) -> CGSize? {
         CGSize(width: 12, height: 12)
     }
 }
 
-private final class FanImageView: NSImageView {
-    private var isSpinning = false
+private final class FanSpinnerView: NSView {
+    private let fanImageView = NSImageView(frame: .zero)
+    private var shouldSpin = false
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        image = NSImage(
+        fanImageView.image = NSImage(
             systemSymbolName: "fan.fill",
             accessibilityDescription: nil
         )?.withSymbolConfiguration(.init(pointSize: 11, weight: .regular))
-        imageScaling = .scaleProportionallyUpOrDown
-        contentTintColor = .secondaryLabelColor
-        wantsLayer = true
-        layer?.masksToBounds = false
+        fanImageView.imageScaling = .scaleProportionallyUpOrDown
+        fanImageView.contentTintColor = .secondaryLabelColor
+        fanImageView.wantsLayer = true
+        fanImageView.layer?.masksToBounds = false
+        addSubview(fanImageView)
         setAccessibilityElement(false)
     }
 
@@ -713,15 +715,43 @@ private final class FanImageView: NSImageView {
         nil
     }
 
-    func setSpeed(_ rpm: Double) {
-        let shouldSpin = rpm > 0 && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        guard shouldSpin != isSpinning else { return }
-        isSpinning = shouldSpin
+    override func layout() {
+        super.layout()
 
-        guard shouldSpin else {
-            layer?.removeAnimation(forKey: "coldhot.fan.rotation")
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        fanImageView.frame = bounds
+        fanImageView.layer?.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+        fanImageView.layer?.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        CATransaction.commit()
+
+        updateAnimation()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateAnimation()
+    }
+
+    func setSpeed(_ rpm: Double) {
+        let newValue = rpm > 0 && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        guard newValue != shouldSpin else { return }
+        shouldSpin = newValue
+        updateAnimation()
+    }
+
+    private func updateAnimation() {
+        let animationKey = "coldhot.fan.rotation"
+        let isAnimating = fanImageView.layer?.animation(forKey: animationKey) != nil
+        let hasFinalLayout = window != nil && bounds.width > 0 && bounds.height > 0
+
+        guard shouldSpin && hasFinalLayout else {
+            if isAnimating {
+                fanImageView.layer?.removeAnimation(forKey: animationKey)
+            }
             return
         }
+        guard !isAnimating else { return }
 
         let animation = CABasicAnimation(keyPath: "transform.rotation.z")
         animation.fromValue = 0
@@ -730,6 +760,6 @@ private final class FanImageView: NSImageView {
         animation.timingFunction = CAMediaTimingFunction(name: .linear)
         animation.repeatCount = .infinity
         animation.isRemovedOnCompletion = false
-        layer?.add(animation, forKey: "coldhot.fan.rotation")
+        fanImageView.layer?.add(animation, forKey: animationKey)
     }
 }
