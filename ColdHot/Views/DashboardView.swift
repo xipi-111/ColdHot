@@ -694,7 +694,7 @@ private struct SpinningFanIcon: NSViewRepresentable {
 }
 
 private final class FanImageView: NSImageView {
-    private var currentRPM = -1.0
+    private var isSpinning = false
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -714,15 +714,20 @@ private final class FanImageView: NSImageView {
     }
 
     func setSpeed(_ rpm: Double) {
-        guard abs(rpm - currentRPM) >= 1 else { return }
-        currentRPM = rpm
-        layer?.removeAnimation(forKey: "coldhot.fan.rotation")
-        guard rpm > 0 else { return }
+        let shouldSpin = rpm > 0 && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        guard shouldSpin != isSpinning else { return }
+        isSpinning = shouldSpin
 
-        let degreesPerSecond = min(max(rpm / 8, 120), 360)
+        guard shouldSpin else {
+            layer?.removeAnimation(forKey: "coldhot.fan.rotation")
+            return
+        }
+
         let animation = CABasicAnimation(keyPath: "transform.rotation.z")
-        animation.byValue = Double.pi * 2
-        animation.duration = 360 / degreesPerSecond
+        animation.fromValue = 0
+        animation.toValue = Double.pi * 2
+        animation.duration = 1.35
+        animation.timingFunction = CAMediaTimingFunction(name: .linear)
         animation.repeatCount = .infinity
         animation.isRemovedOnCompletion = false
         layer?.add(animation, forKey: "coldhot.fan.rotation")
