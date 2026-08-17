@@ -49,6 +49,18 @@ enum BuildVariant {
     static var supportsDockControl: Bool { !isAppStore }
     static var supportsFanReadings: Bool { !isAppStore }
 
+    static var availableThresholdMetrics: Set<ThresholdMetric> {
+        if !isAppStore { return Set(ThresholdMetric.allCases) }
+        return [
+            .cpuUsage,
+            .memoryUsage,
+            .networkDownload,
+            .networkUpload,
+            .thermalState,
+            .batteryPercentage
+        ]
+    }
+
     static var settingsSummary: String {
         if isAppStore {
             return "App Store 版仅使用公开系统接口；温度传感器、风扇、整机功率、进程排行、GPU/磁盘实时统计与 Dock 控制只在官网版提供。"

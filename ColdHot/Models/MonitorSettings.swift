@@ -22,6 +22,10 @@ final class MonitorSettings: ObservableObject {
         didSet { defaults.set(showDockQuickControl, forKey: Keys.showDockQuickControl) }
     }
 
+    @Published private(set) var thresholdRules: [ThresholdMetric: ThresholdRule] {
+        didSet { persistThresholdRules() }
+    }
+
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
@@ -48,6 +52,22 @@ final class MonitorSettings: ObservableObject {
         sampleInterval = [1.0, 2.0, 5.0].contains(storedInterval) ? storedInterval : 2.0
 
         showDockQuickControl = defaults.object(forKey: Keys.showDockQuickControl) as? Bool ?? true
+
+        let defaultRules = Dictionary(uniqueKeysWithValues: ThresholdMetric.allCases.map {
+            ($0, ThresholdRule.defaultRule(for: $0))
+        })
+        if let data = defaults.data(forKey: Keys.thresholdRules),
+           let storedRules = try? JSONDecoder().decode([ThresholdRule].self, from: data) {
+            thresholdRules = storedRules.reduce(into: defaultRules) { result, rule in
+                result[rule.kind] = ThresholdRule(
+                    kind: rule.kind,
+                    isEnabled: rule.isEnabled,
+                    value: rule.kind.clamped(rule.value)
+                )
+            }
+        } else {
+            thresholdRules = defaultRules
+        }
     }
 
     func isEnabled(_ metric: MetricKind) -> Bool {
@@ -80,11 +100,36 @@ final class MonitorSettings: ObservableObject {
         enabledDetails = updated
     }
 
+    func thresholdRule(for kind: ThresholdMetric) -> ThresholdRule {
+        thresholdRules[kind] ?? .defaultRule(for: kind)
+    }
+
+    func setThresholdEnabled(_ enabled: Bool, for kind: ThresholdMetric) {
+        guard BuildVariant.availableThresholdMetrics.contains(kind) else { return }
+        var updated = thresholdRules
+        var rule = thresholdRule(for: kind)
+        rule.isEnabled = enabled
+        updated[kind] = rule
+        thresholdRules = updated
+    }
+
+    func setThresholdValue(_ value: Double, for kind: ThresholdMetric) {
+        guard BuildVariant.availableThresholdMetrics.contains(kind), value.isFinite else { return }
+        var updated = thresholdRules
+        var rule = thresholdRule(for: kind)
+        rule.value = kind.clamped(value)
+        updated[kind] = rule
+        thresholdRules = updated
+    }
+
     func reset() {
         enabledMetrics = Self.defaultMetrics.intersection(BuildVariant.availableMetrics)
         enabledDetails = MetricDetail.defaults
         sampleInterval = 2.0
         showDockQuickControl = true
+        thresholdRules = Dictionary(uniqueKeysWithValues: ThresholdMetric.allCases.map {
+            ($0, ThresholdRule.defaultRule(for: $0))
+        })
     }
 
     private func persistMetrics() {
@@ -95,10 +140,18 @@ final class MonitorSettings: ObservableObject {
         defaults.set(enabledDetails.map(\.rawValue).sorted(), forKey: Keys.enabledDetails)
     }
 
+    private func persistThresholdRules() {
+        let rules = thresholdRules.values.sorted { $0.kind.rawValue < $1.kind.rawValue }
+        if let data = try? JSONEncoder().encode(rules) {
+            defaults.set(data, forKey: Keys.thresholdRules)
+        }
+    }
+
     private enum Keys {
         static let enabledMetrics = "enabledMetrics"
         static let enabledDetails = "enabledDetails"
         static let sampleInterval = "sampleInterval"
         static let showDockQuickControl = "showDockQuickControl"
+        static let thresholdRules = "thresholdRules"
     }
 }

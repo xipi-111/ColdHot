@@ -210,12 +210,15 @@ struct SamplingRequest {
     let enabledMetrics: Set<MetricKind>
     let enabledDetails: Set<MetricDetail>
     let expandedMetric: MetricKind?
+    let backgroundMetrics: Set<MetricKind>
+    let backgroundDetails: Set<MetricDetail>
 
     func includes(_ metric: MetricKind) -> Bool {
-        enabledMetrics.contains(metric)
+        enabledMetrics.contains(metric) || backgroundMetrics.contains(metric)
     }
 
     func includes(_ detail: MetricDetail) -> Bool {
-        expandedMetric == detail.metric && enabledDetails.contains(detail)
+        (expandedMetric == detail.metric && enabledDetails.contains(detail))
+            || backgroundDetails.contains(detail)
     }
 }

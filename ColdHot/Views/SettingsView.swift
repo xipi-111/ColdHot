@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var settings: MonitorSettings
     @State private var expandedMetrics: Set<MetricKind> = []
+    @State private var expandedThresholdMetrics: Set<MetricKind> = []
     @State private var showsPrivacyPolicy = false
 
     var body: some View {
@@ -25,6 +26,16 @@ struct SettingsView: View {
                 Text("菜单栏指标")
             } footer: {
                 Text("一级开关控制整张指标卡片；详细项目只会显示在卡片展开区域，并按需启动采样。")
+            }
+
+            Section {
+                ForEach(thresholdParentMetrics) { metric in
+                    thresholdGroup(metric)
+                }
+            } header: {
+                Text("菜单栏阈值显示")
+            } footer: {
+                Text("连续 2 次达到阈值后，菜单栏会显示实时读数；连续 3 次回落后恢复简易图标。多个告警每 5 秒轮换。传感器阈值会增加少量按需采样。")
             }
 
             if BuildVariant.supportsDockControl {
@@ -65,7 +76,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 560, height: 720)
+        .frame(width: 560, height: 760)
         .navigationTitle("ColdHot 设置")
         .sheet(isPresented: $showsPrivacyPolicy) {
             PrivacyPolicyView()
@@ -122,6 +133,102 @@ struct SettingsView: View {
         .padding(.vertical, 3)
     }
 
+    private var thresholdParentMetrics: [MetricKind] {
+        MetricKind.allCases.filter { metric in
+            BuildVariant.availableThresholdMetrics.contains { $0.metric == metric }
+        }
+    }
+
+    private func thresholdKinds(for metric: MetricKind) -> [ThresholdMetric] {
+        ThresholdMetric.allCases.filter {
+            $0.metric == metric && BuildVariant.availableThresholdMetrics.contains($0)
+        }
+    }
+
+    private func thresholdGroup(_ metric: MetricKind) -> some View {
+        DisclosureGroup(isExpanded: thresholdDisclosureBinding(metric)) {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(thresholdKinds(for: metric)) { kind in
+                    thresholdSetting(kind)
+                }
+            }
+            .padding(.leading, 30)
+            .padding(.top, 8)
+        } label: {
+            HStack(spacing: 9) {
+                Image(systemName: metric.systemImage)
+                    .foregroundStyle(metric.tint)
+                    .frame(width: 21)
+                Text(metric.title)
+                Spacer()
+                let enabledCount = thresholdKinds(for: metric).filter {
+                    settings.thresholdRule(for: $0).isEnabled
+                }.count
+                if enabledCount > 0 {
+                    Text("已开启 \(enabledCount) 项")
+                        .font(.caption2)
+                        .foregroundStyle(metric.tint)
+                }
+            }
+        }
+        .tint(metric.tint)
+    }
+
+    private func thresholdSetting(_ kind: ThresholdMetric) -> some View {
+        let rule = settings.thresholdRule(for: kind)
+        return HStack(alignment: .center, spacing: 9) {
+            Toggle("", isOn: thresholdEnabledBinding(kind))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .accessibilityLabel("启用\(kind.title)阈值")
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(kind.title)
+                    .font(.system(size: 12))
+                Text(kind.explanation)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+
+            Spacer(minLength: 10)
+
+            thresholdEditor(kind)
+                .disabled(!rule.isEnabled)
+                .opacity(rule.isEnabled ? 1 : 0.45)
+        }
+    }
+
+    @ViewBuilder
+    private func thresholdEditor(_ kind: ThresholdMetric) -> some View {
+        if kind == .thermalState {
+            Picker("", selection: thresholdValueBinding(kind)) {
+                Text("偏热").tag(1.0)
+                Text("较热").tag(2.0)
+                Text("严重").tag(3.0)
+            }
+            .labelsHidden()
+            .frame(width: 88)
+        } else {
+            HStack(spacing: 4) {
+                TextField(
+                    "阈值",
+                    value: thresholdValueBinding(kind),
+                    format: .number.precision(.fractionLength(0...1))
+                )
+                .textFieldStyle(.roundedBorder)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 68)
+                .accessibilityLabel("\(kind.title)阈值")
+
+                Text(kind.unit)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(minWidth: 28, alignment: .leading)
+            }
+        }
+    }
+
     private func metricBinding(_ metric: MetricKind) -> Binding<Bool> {
         Binding(
             get: { settings.isEnabled(metric) },
@@ -136,6 +243,20 @@ struct SettingsView: View {
         )
     }
 
+    private func thresholdEnabledBinding(_ kind: ThresholdMetric) -> Binding<Bool> {
+        Binding(
+            get: { settings.thresholdRule(for: kind).isEnabled },
+            set: { settings.setThresholdEnabled($0, for: kind) }
+        )
+    }
+
+    private func thresholdValueBinding(_ kind: ThresholdMetric) -> Binding<Double> {
+        Binding(
+            get: { settings.thresholdRule(for: kind).value },
+            set: { settings.setThresholdValue($0, for: kind) }
+        )
+    }
+
     private func disclosureBinding(_ metric: MetricKind) -> Binding<Bool> {
         Binding(
             get: { expandedMetrics.contains(metric) },
@@ -144,6 +265,19 @@ struct SettingsView: View {
                     expandedMetrics.insert(metric)
                 } else {
                     expandedMetrics.remove(metric)
+                }
+            }
+        )
+    }
+
+    private func thresholdDisclosureBinding(_ metric: MetricKind) -> Binding<Bool> {
+        Binding(
+            get: { expandedThresholdMetrics.contains(metric) },
+            set: { expanded in
+                if expanded {
+                    expandedThresholdMetrics.insert(metric)
+                } else {
+                    expandedThresholdMetrics.remove(metric)
                 }
             }
         )
