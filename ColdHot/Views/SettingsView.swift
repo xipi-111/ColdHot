@@ -15,6 +15,20 @@ struct SettingsView: View {
     @State private var backgroundErrorMessage: String?
     @State private var notificationAuthorizationDenied = false
 
+    init(
+        settings: MonitorSettings,
+        panelBackgroundStore: PanelBackgroundStore,
+        monitor: PerformanceMonitor,
+        updateController: UpdateController,
+        initialPage: SettingsPage = .appearance
+    ) {
+        self.settings = settings
+        self.panelBackgroundStore = panelBackgroundStore
+        self.monitor = monitor
+        self.updateController = updateController
+        _selectedPage = State(initialValue: initialPage)
+    }
+
     var body: some View {
         SettingsShell(selection: $selectedPage, versionText: currentVersionText) {
             selectedSettingsPage
@@ -76,350 +90,486 @@ struct SettingsView: View {
     }
 
     private var appearancePage: some View {
-        HStack(spacing: 0) {
-            Form {
-                Section {
-                    panelBackgroundSettings
-                } header: {
-                    Text("面板背景与可读性")
-                } footer: {
-                    Text("图片会压缩后保存在本机，不会上传，也不会在指标刷新时重复读取。")
-                }
+        SettingsPageContent(page: .appearance) {
+            HStack(alignment: .top, spacing: 0) {
+                VStack(alignment: .leading, spacing: SettingsLayout.sectionSpacing) {
+                    SettingsSectionSurface(
+                        "面板背景与可读性",
+                        footer: "图片会压缩后保存在本机，不会上传，也不会在指标刷新时重复读取。",
+                        accessibilityIdentifier: "settings-section-appearance-0"
+                    ) {
+                        panelBackgroundSettings
+                    }
 
-                if hasLowReadability {
-                    Section {
-                        Label("当前组合可能使文字或进度条难以辨认。", systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                        Button("恢复推荐可读性") {
-                            settings.restoreRecommendedReadability()
+                    if hasLowReadability {
+                        SettingsSectionSurface(
+                            accessibilityIdentifier: "settings-section-appearance-1"
+                        ) {
+                            SettingsRow {
+                                Label(
+                                    "当前组合可能使文字或进度条难以辨认。",
+                                    systemImage: "exclamationmark.triangle.fill"
+                                )
+                                .foregroundStyle(.orange)
+                            }
+                            SettingsSectionDivider()
+                            SettingsRow {
+                                Button("恢复推荐可读性") {
+                                    settings.restoreRecommendedReadability()
+                                }
+                            }
                         }
                     }
                 }
-            }
-            .formStyle(.grouped)
-            .frame(minWidth: 390)
+                .frame(minWidth: 390)
 
-            Divider()
+                Divider()
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("菜单面板真实范围")
-                    .font(.headline)
-                PanelAppearancePreview(
-                    image: panelBackgroundStore.image,
-                    isBackgroundEnabled: settings.isPanelBackgroundEnabled,
-                    dimOpacity: settings.panelBackgroundDimOpacity,
-                    cardOpacity: settings.panelCardOpacity,
-                    primaryTextOpacity: settings.panelPrimaryTextOpacity,
-                    secondaryTextOpacity: settings.panelSecondaryTextOpacity,
-                    progressOpacity: settings.panelProgressOpacity,
-                    enabledMetrics: previewEnabledMetrics,
-                    showsDockQuickControl: settings.showDockQuickControl
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(.quaternary, lineWidth: 1)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("菜单面板真实范围")
+                        .font(.headline)
+                    PanelAppearancePreview(
+                        image: panelBackgroundStore.image,
+                        isBackgroundEnabled: settings.isPanelBackgroundEnabled,
+                        dimOpacity: settings.panelBackgroundDimOpacity,
+                        cardOpacity: settings.panelCardOpacity,
+                        primaryTextOpacity: settings.panelPrimaryTextOpacity,
+                        secondaryTextOpacity: settings.panelSecondaryTextOpacity,
+                        progressOpacity: settings.panelProgressOpacity,
+                        enabledMetrics: previewEnabledMetrics,
+                        showsDockQuickControl: settings.showDockQuickControl
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(.quaternary, lineWidth: 1)
+                    }
+                    Text("使用与菜单面板相同的 370px 画布、卡片高度和图片裁切。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                Text("使用与菜单面板相同的 370px 画布、卡片高度和图片裁切。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                .frame(width: 390, alignment: .topLeading)
+                .padding(12)
+                .frame(maxHeight: .infinity, alignment: .top)
             }
-            .frame(width: 390, alignment: .topLeading)
-            .padding(12)
-            .frame(maxHeight: .infinity, alignment: .top)
         }
     }
 
     private var metricsPage: some View {
-        Form {
-            Section("快速预设") {
+        SettingsPageContent(page: .metrics) {
+            SettingsSectionSurface(
+                "快速预设",
+                accessibilityIdentifier: "settings-section-metrics-0"
+            ) {
                 ForEach(MonitoringPreset.allCases) { preset in
-                    Button {
-                        settings.applyPreset(preset)
-                    } label: {
-                        HStack {
-                            Text(preset.rawValue)
-                            Spacer()
-                            Text(preset.explanation)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                    SettingsRow {
+                        Button {
+                            settings.applyPreset(preset)
+                        } label: {
+                            HStack {
+                                Text(preset.rawValue)
+                                Spacer()
+                                Text(preset.explanation)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
+                    if preset.id != MonitoringPreset.allCases.last?.id {
+                        SettingsSectionDivider()
+                    }
                 }
             }
 
-            Section {
+            SettingsSectionSurface(
+                "菜单栏指标",
+                footer: "一级开关控制整张卡片；详细项目只在卡片展开后按需采样。",
+                accessibilityIdentifier: "settings-section-metrics-1"
+            ) {
                 ForEach(MetricCategory.allCases) { category in
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(category.rawValue)
-                            .font(.headline)
-                            .padding(.top, 5)
+                    VStack(alignment: .leading, spacing: 0) {
+                        SettingsRow {
+                            Text(category.rawValue)
+                                .font(.headline)
+                                .padding(.top, 5)
+                        }
                         ForEach(MetricKind.allCases.filter {
                             $0.category == category && BuildVariant.availableMetrics.contains($0)
                         }) { metric in
-                            metricSetting(metric)
+                            SettingsSectionDivider()
+                            SettingsRow {
+                                metricSetting(metric)
+                            }
                         }
                     }
+                    if category.id != MetricCategory.allCases.last?.id {
+                        SettingsSectionDivider()
+                    }
                 }
-            } header: {
-                Text("菜单栏指标")
-            } footer: {
-                Text("一级开关控制整张卡片；详细项目只在卡片展开后按需采样。")
             }
         }
-        .formStyle(.grouped)
     }
 
     private var alertsPage: some View {
-        Form {
-            Section("系统通知") {
-                Toggle("达到阈值时通知", isOn: thresholdNotificationsBinding)
-                Toggle(
-                    "恢复正常时通知",
-                    isOn: $settings.thresholdRecoveryNotificationsEnabled
-                )
-                .disabled(!settings.thresholdNotificationsEnabled)
-                Text("默认关闭。相同指标触发通知后会等待 10 分钟，避免反复打扰。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        SettingsPageContent(page: .alerts) {
+            SettingsSectionSurface(
+                "系统通知",
+                accessibilityIdentifier: "settings-section-alerts-0"
+            ) {
+                SettingsRow {
+                    Toggle("达到阈值时通知", isOn: thresholdNotificationsBinding)
+                }
+                SettingsSectionDivider()
+                SettingsRow {
+                    Toggle(
+                        "恢复正常时通知",
+                        isOn: $settings.thresholdRecoveryNotificationsEnabled
+                    )
+                    .disabled(!settings.thresholdNotificationsEnabled)
+                }
+                SettingsSectionDivider()
+                SettingsRow {
+                    Text("默认关闭。相同指标触发通知后会等待 10 分钟，避免反复打扰。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
-            Section {
+            SettingsSectionSurface(
+                "菜单栏阈值显示",
+                footer: "连续 2 次达到阈值后显示；连续 3 次回落后恢复。多个告警每 5 秒轮换。",
+                accessibilityIdentifier: "settings-section-alerts-1"
+            ) {
                 ForEach(thresholdParentMetrics) { metric in
-                    thresholdGroup(metric)
+                    SettingsRow {
+                        thresholdGroup(metric)
+                    }
+                    if metric != thresholdParentMetrics.last {
+                        SettingsSectionDivider()
+                    }
                 }
-            } header: {
-                Text("菜单栏阈值显示")
-            } footer: {
-                Text("连续 2 次达到阈值后显示；连续 3 次回落后恢复。多个告警每 5 秒轮换。")
             }
         }
-        .formStyle(.grouped)
     }
 
     private var generalPage: some View {
-        Form {
+        SettingsPageContent(page: .general) {
             if BuildVariant.channel == .direct {
-                Section("自动更新") {
-                    Toggle(
-                        "自动检查更新",
-                        isOn: Binding(
-                            get: { updateController.automaticallyChecksForUpdates },
-                            set: { updateController.automaticallyChecksForUpdates = $0 }
+                SettingsSectionSurface(
+                    "自动更新",
+                    accessibilityIdentifier: "settings-section-general-0"
+                ) {
+                    SettingsRow {
+                        Toggle(
+                            "自动检查更新",
+                            isOn: Binding(
+                                get: { updateController.automaticallyChecksForUpdates },
+                                set: { updateController.automaticallyChecksForUpdates = $0 }
+                            )
                         )
-                    )
-                    Toggle(
-                        "自动下载更新",
-                        isOn: Binding(
-                            get: { updateController.automaticallyDownloadsUpdates },
-                            set: { updateController.automaticallyDownloadsUpdates = $0 }
+                    }
+                    SettingsSectionDivider()
+                    SettingsRow {
+                        Toggle(
+                            "自动下载更新",
+                            isOn: Binding(
+                                get: { updateController.automaticallyDownloadsUpdates },
+                                set: { updateController.automaticallyDownloadsUpdates = $0 }
+                            )
                         )
-                    )
-                    .disabled(!updateController.automaticallyChecksForUpdates)
-                    Button("立即检查更新…") { updateController.checkForUpdates() }
+                        .disabled(!updateController.automaticallyChecksForUpdates)
+                    }
+                    SettingsSectionDivider()
+                    SettingsRow {
+                        Button("立即检查更新…") { updateController.checkForUpdates() }
+                    }
                 }
             }
 
             if BuildVariant.supportsDockControl {
-                Section("快捷控制") {
-                    Toggle("在菜单面板显示“Dock 即时弹出”", isOn: $settings.showDockQuickControl)
-                    Text("只影响自动隐藏 Dock 的边缘触发等待时间；关闭时恢复修改前的延迟。")
+                SettingsSectionSurface(
+                    "快捷控制",
+                    accessibilityIdentifier: "settings-section-general-1"
+                ) {
+                    SettingsRow {
+                        Toggle(
+                            "在菜单面板显示“Dock 即时弹出”",
+                            isOn: $settings.showDockQuickControl
+                        )
+                    }
+                    SettingsSectionDivider()
+                    SettingsRow {
+                        Text("只影响自动隐藏 Dock 的边缘触发等待时间；关闭时恢复修改前的延迟。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            SettingsSectionSurface(
+                "采样",
+                accessibilityIdentifier: "settings-section-general-2"
+            ) {
+                SettingsRow {
+                    Picker("刷新间隔", selection: $settings.sampleInterval) {
+                        Text("1 秒（实时）").tag(1.0)
+                        Text("2 秒（推荐）").tag(2.0)
+                        Text("5 秒（省电）").tag(5.0)
+                    }
+                    .pickerStyle(.segmented)
+                }
+                SettingsSectionDivider()
+                SettingsRow {
+                    Text("收起时只采集摘要；每核心、进程排行和传感器详情仅按需更新。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
 
-            Section("采样") {
-                Picker("刷新间隔", selection: $settings.sampleInterval) {
-                    Text("1 秒（实时）").tag(1.0)
-                    Text("2 秒（推荐）").tag(2.0)
-                    Text("5 秒（省电）").tag(5.0)
-                }
-                .pickerStyle(.segmented)
-                Text("收起时只采集摘要；每核心、进程排行和传感器详情仅按需更新。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section {
-                HStack {
-                    Text(BuildVariant.settingsSummary)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button("恢复默认") { settings.reset() }
+            SettingsSectionSurface(
+                accessibilityIdentifier: "settings-section-general-3"
+            ) {
+                SettingsRow {
+                    HStack {
+                        Text(BuildVariant.settingsSummary)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("恢复默认") { settings.reset() }
+                    }
                 }
             }
         }
-        .formStyle(.grouped)
     }
 
     private var aboutPage: some View {
-        Form {
-            Section("版本") {
-                LabeledContent("发行渠道", value: BuildVariant.displayName)
-                LabeledContent("当前版本", value: currentVersionText)
-                if BuildVariant.channel == .direct {
-                    Button("检查更新…") { updateController.checkForUpdates() }
+        SettingsPageContent(page: .about) {
+            SettingsSectionSurface(
+                "版本",
+                accessibilityIdentifier: "settings-section-about-0"
+            ) {
+                SettingsRow {
+                    LabeledContent("发行渠道", value: BuildVariant.displayName)
                 }
-                Button("隐私政策") { showsPrivacyPolicy = true }
+                SettingsSectionDivider()
+                SettingsRow {
+                    LabeledContent("当前版本", value: currentVersionText)
+                }
+                if BuildVariant.channel == .direct {
+                    SettingsSectionDivider()
+                    SettingsRow {
+                        Button("检查更新…") { updateController.checkForUpdates() }
+                    }
+                }
+                SettingsSectionDivider()
+                SettingsRow {
+                    Button("隐私政策") { showsPrivacyPolicy = true }
+                }
             }
 
-            Section("设备能力") {
-                capabilityRow("GPU 实时读数", available: monitor.snapshot.gpu.usage != nil)
-                capabilityRow("风扇转速", available: !monitor.snapshot.fans.isEmpty)
-                capabilityRow("温度传感器", available: hasTemperatureReading)
-                capabilityRow(
-                    "系统功率",
-                    available: monitor.snapshot.battery?.systemPowerWatts != nil
-                )
-                Button("重新检测") { monitor.probeCapabilities() }
+            SettingsSectionSurface(
+                "设备能力",
+                accessibilityIdentifier: "settings-section-about-1"
+            ) {
+                SettingsRow {
+                    capabilityRow("GPU 实时读数", available: monitor.snapshot.gpu.usage != nil)
+                }
+                SettingsSectionDivider()
+                SettingsRow {
+                    capabilityRow("风扇转速", available: !monitor.snapshot.fans.isEmpty)
+                }
+                SettingsSectionDivider()
+                SettingsRow {
+                    capabilityRow("温度传感器", available: hasTemperatureReading)
+                }
+                SettingsSectionDivider()
+                SettingsRow {
+                    capabilityRow(
+                        "系统功率",
+                        available: monitor.snapshot.battery?.systemPowerWatts != nil
+                    )
+                }
+                SettingsSectionDivider()
+                SettingsRow {
+                    Button("重新检测") { monitor.probeCapabilities() }
+                }
             }
 
-            Section("ColdHot 运行影响") {
-                LabeledContent(
-                    "CPU",
-                    value: monitor.selfResourceSnapshot.cpuUsage.formatted(
-                        .number.precision(.fractionLength(1))
-                    ) + "%"
-                )
-                LabeledContent("内存", value: selfMemoryText)
-                LabeledContent(
-                    "唤醒",
-                    value: monitor.selfResourceSnapshot.wakeupsPerSecond.formatted(
-                        .number.precision(.fractionLength(1))
-                    ) + " 次/秒"
-                )
-                Text("该区域每约 5 秒更新，用于确认监控工具自身的资源开销。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            SettingsSectionSurface(
+                "ColdHot 运行影响",
+                accessibilityIdentifier: "settings-section-about-2"
+            ) {
+                SettingsRow {
+                    LabeledContent(
+                        "CPU",
+                        value: monitor.selfResourceSnapshot.cpuUsage.formatted(
+                            .number.precision(.fractionLength(1))
+                        ) + "%"
+                    )
+                }
+                SettingsSectionDivider()
+                SettingsRow {
+                    LabeledContent("内存", value: selfMemoryText)
+                }
+                SettingsSectionDivider()
+                SettingsRow {
+                    LabeledContent(
+                        "唤醒",
+                        value: monitor.selfResourceSnapshot.wakeupsPerSecond.formatted(
+                            .number.precision(.fractionLength(1))
+                        ) + " 次/秒"
+                    )
+                }
+                SettingsSectionDivider()
+                SettingsRow {
+                    Text("该区域每约 5 秒更新，用于确认监控工具自身的资源开销。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
-        .formStyle(.grouped)
         .onAppear { monitor.probeCapabilities() }
     }
 
     @ViewBuilder
     private var panelBackgroundSettings: some View {
         if panelBackgroundStore.image != nil {
-            HStack(spacing: 10) {
-                Image(systemName: "photo")
-                    .foregroundStyle(.secondary)
-                Text("自定义图片")
-                    .font(.headline)
-                Spacer()
-                Button("更换图片…") { isChoosingBackground = true }
-            }
-
-            Toggle(
-                "使用自定义背景",
-                isOn: panelBackgroundEnabledBinding
-            )
-
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text("深色遮罩")
-                    Spacer()
-                    Text("\(Int((settings.panelBackgroundDimOpacity * 100).rounded()))%")
-                        .monospacedDigit()
+            SettingsRow {
+                HStack(spacing: 10) {
+                    Image(systemName: "photo")
                         .foregroundStyle(.secondary)
-                }
-                Slider(
-                    value: panelBackgroundDimOpacityBinding,
-                    in: 0...0.70,
-                    step: 0.05
-                )
-                .accessibilityLabel("深色遮罩强度")
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text("卡片不透明度")
+                    Text("自定义图片")
+                        .font(.headline)
                     Spacer()
-                    Text("\(Int((settings.panelCardOpacity * 100).rounded()))%")
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
+                    Button("更换图片…") { isChoosingBackground = true }
                 }
-                Slider(
-                    value: panelCardOpacityBinding,
-                    in: 0.10...1,
-                    step: 0.05
-                )
-                .accessibilityLabel("卡片不透明度")
             }
-
-            VStack(alignment: .leading, spacing: 6) {
+            SettingsSectionDivider()
+            SettingsRow {
+                Toggle(
+                    "使用自定义背景",
+                    isOn: panelBackgroundEnabledBinding
+                )
+            }
+            SettingsSectionDivider()
+            SettingsRow {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("深色遮罩")
+                        Spacer()
+                        Text("\(Int((settings.panelBackgroundDimOpacity * 100).rounded()))%")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                    Slider(
+                        value: panelBackgroundDimOpacityBinding,
+                        in: 0...0.70,
+                        step: 0.05
+                    )
+                    .accessibilityLabel("深色遮罩强度")
+                }
+            }
+            SettingsSectionDivider()
+            SettingsRow {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("卡片不透明度")
+                        Spacer()
+                        Text("\(Int((settings.panelCardOpacity * 100).rounded()))%")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                    Slider(
+                        value: panelCardOpacityBinding,
+                        in: 0.10...1,
+                        step: 0.05
+                    )
+                    .accessibilityLabel("卡片不透明度")
+                }
+            }
+            SettingsSectionDivider()
+            SettingsRow {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("主文字亮度")
+                        Spacer()
+                        Text("\(Int((settings.panelPrimaryTextOpacity * 100).rounded()))%")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                    Slider(
+                        value: panelPrimaryTextOpacityBinding,
+                        in: 0.50...1,
+                        step: 0.05
+                    )
+                    .accessibilityLabel("面板主文字亮度")
+                }
+            }
+            SettingsSectionDivider()
+            SettingsRow {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("辅助文字亮度")
+                        Spacer()
+                        Text("\(Int((settings.panelSecondaryTextOpacity * 100).rounded()))%")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                    Slider(
+                        value: panelSecondaryTextOpacityBinding,
+                        in: 0.50...1,
+                        step: 0.05
+                    )
+                    .accessibilityLabel("面板辅助文字亮度")
+                }
+            }
+            SettingsSectionDivider()
+            SettingsRow {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("进度条透明度")
+                        Spacer()
+                        Text("\(Int((settings.panelProgressOpacity * 100).rounded()))%")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                    Slider(
+                        value: panelProgressOpacityBinding,
+                        in: 0.50...1,
+                        step: 0.05
+                    )
+                    .accessibilityLabel("面板进度条透明度")
+                }
+            }
+            SettingsSectionDivider()
+            SettingsRow {
                 HStack {
-                    Text("主文字亮度")
                     Spacer()
-                    Text("\(Int((settings.panelPrimaryTextOpacity * 100).rounded()))%")
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                }
-                Slider(
-                    value: panelPrimaryTextOpacityBinding,
-                    in: 0.50...1,
-                    step: 0.05
-                )
-                .accessibilityLabel("面板主文字亮度")
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text("辅助文字亮度")
-                    Spacer()
-                    Text("\(Int((settings.panelSecondaryTextOpacity * 100).rounded()))%")
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                }
-                Slider(
-                    value: panelSecondaryTextOpacityBinding,
-                    in: 0.50...1,
-                    step: 0.05
-                )
-                .accessibilityLabel("面板辅助文字亮度")
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text("进度条透明度")
-                    Spacer()
-                    Text("\(Int((settings.panelProgressOpacity * 100).rounded()))%")
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                }
-                Slider(
-                    value: panelProgressOpacityBinding,
-                    in: 0.50...1,
-                    step: 0.05
-                )
-                .accessibilityLabel("面板进度条透明度")
-            }
-
-            HStack {
-                Spacer()
-                Button("移除背景", role: .destructive) {
-                    removeBackgroundImage()
+                    Button("移除背景", role: .destructive) {
+                        removeBackgroundImage()
+                    }
                 }
             }
         } else {
-            HStack(spacing: 12) {
-                Image(systemName: "photo.on.rectangle.angled")
-                    .font(.system(size: 24))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 38, height: 38)
-                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 9))
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("使用自己的图片")
-                        .font(.headline)
-                    Text("支持系统可读取的 PNG、JPEG、HEIC 和 TIFF 图片")
-                        .font(.caption)
+            SettingsRow {
+                HStack(spacing: 12) {
+                    Image(systemName: "photo.on.rectangle.angled")
+                        .font(.system(size: 24))
                         .foregroundStyle(.secondary)
+                        .frame(width: 38, height: 38)
+                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 9))
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("使用自己的图片")
+                            .font(.headline)
+                        Text("支持系统可读取的 PNG、JPEG、HEIC 和 TIFF 图片")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("选择图片…") { isChoosingBackground = true }
                 }
-                Spacer()
-                Button("选择图片…") { isChoosingBackground = true }
             }
         }
     }

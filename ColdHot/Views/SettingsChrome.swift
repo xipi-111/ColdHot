@@ -43,6 +43,34 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
 
 enum SettingsSidebarMoveDirection { case up, down }
 
+private struct SettingsAccessibilityIdentifierReporterKey: EnvironmentKey {
+    static let defaultValue: ((String) -> Void)? = nil
+}
+
+extension EnvironmentValues {
+    var settingsAccessibilityIdentifierReporter: ((String) -> Void)? {
+        get { self[SettingsAccessibilityIdentifierReporterKey.self] }
+        set { self[SettingsAccessibilityIdentifierReporterKey.self] = newValue }
+    }
+}
+
+extension View {
+    func settingsAccessibilityIdentifier(_ identifier: String) -> some View {
+        modifier(SettingsAccessibilityIdentifierModifier(identifier: identifier))
+    }
+}
+
+private struct SettingsAccessibilityIdentifierModifier: ViewModifier {
+    let identifier: String
+    @Environment(\.settingsAccessibilityIdentifierReporter) private var reporter
+
+    func body(content: Content) -> some View {
+        content
+            .accessibilityIdentifier(identifier)
+            .onAppear { reporter?(identifier) }
+    }
+}
+
 enum SettingsSidebarSelection {
     static func move(
         from current: SettingsPage,
@@ -194,7 +222,7 @@ struct SettingsSidebar: View {
         }
         .onMoveCommand(perform: moveSelection)
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("settings-sidebar")
+        .settingsAccessibilityIdentifier("settings-sidebar")
     }
 
     @ViewBuilder
@@ -291,5 +319,119 @@ struct SettingsShell<Content: View>: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(nsColor: .windowBackgroundColor))
         }
+    }
+}
+
+struct SettingsPageContent<Content: View>: View {
+    let page: SettingsPage
+    private let content: Content
+
+    init(page: SettingsPage, @ViewBuilder content: () -> Content) {
+        self.page = page
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(page.rawValue)
+                .font(.system(size: 34, weight: .bold))
+                .padding(.bottom, 28)
+            ScrollView {
+                VStack(alignment: .leading, spacing: SettingsLayout.sectionSpacing) {
+                    content
+                }
+                .frame(maxWidth: 660, alignment: .leading)
+                .padding(.bottom, 32)
+            }
+            .scrollIndicators(.hidden)
+        }
+        .padding(.top, SettingsLayout.pageTopPadding)
+        .padding(.horizontal, SettingsLayout.pageHorizontalPadding)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .accessibilityElement(children: .contain)
+        .settingsAccessibilityIdentifier("settings-page-\(page.slug)")
+    }
+}
+
+struct SettingsSectionSurface<Content: View>: View {
+    let title: String?
+    let footer: String?
+    let identifier: String
+    private let content: Content
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    init(
+        _ title: String? = nil,
+        footer: String? = nil,
+        accessibilityIdentifier: String,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.footer = footer
+        identifier = accessibilityIdentifier
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let title {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+            }
+
+            VStack(alignment: .leading, spacing: 0) {
+                content
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                surfaceColor,
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            if let footer {
+                Text(footer)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .contain)
+        .settingsAccessibilityIdentifier(identifier)
+    }
+
+    private var surfaceColor: Color {
+        colorScheme == .dark
+            ? Color.primary.opacity(0.045)
+            : Color.white.opacity(0.64)
+    }
+}
+
+struct SettingsRow<Content: View>: View {
+    private let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .frame(
+                maxWidth: .infinity,
+                minHeight: SettingsLayout.rowHeight,
+                alignment: .leading
+            )
+            .padding(.horizontal, 14)
+    }
+}
+
+struct SettingsSectionDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.075))
+            .frame(height: 1)
+            .padding(.leading, 14)
     }
 }

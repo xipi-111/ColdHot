@@ -44,15 +44,64 @@ enum SettingsVisualCheck {
         settings.applyPreset(.everyday)
         settings.setPanelBackgroundEnabled(true)
         let monitor = PerformanceMonitor(settings: settings)
-        let backgroundStore = PanelBackgroundStore()
-        let view = SettingsView(
-            settings: settings,
-            panelBackgroundStore: backgroundStore,
-            monitor: monitor,
-            updateController: UpdateController()
+        let backgroundStore = PanelBackgroundStore(
+            directoryURL: FileManager.default.temporaryDirectory.appendingPathComponent(
+                "coldhot-settings-visual-\(UUID().uuidString)",
+                isDirectory: true
+            )
         )
 
-        let hostingView = NSHostingView(rootView: view)
+        let outputDirectory = CommandLine.arguments.dropFirst().first
+            ?? "/tmp/coldhot-settings-a1"
+        try FileManager.default.createDirectory(
+            atPath: outputDirectory,
+            withIntermediateDirectories: true
+        )
+
+        let appearances: [(slug: String, name: NSAppearance.Name)] = [
+            ("aqua", .aqua),
+            ("darkAqua", .darkAqua)
+        ]
+        for appearance in appearances {
+            for page in SettingsPage.allCases {
+                let view = SettingsView(
+                    settings: settings,
+                    panelBackgroundStore: backgroundStore,
+                    monitor: monitor,
+                    updateController: UpdateController(),
+                    initialPage: page
+                )
+                let outputPath = outputDirectory
+                    + "/\(appearance.slug)-\(page.slug).png"
+                try render(
+                    view,
+                    page: page,
+                    appearance: appearance.name,
+                    outputPath: outputPath
+                )
+                print(outputPath)
+            }
+        }
+        if ProcessInfo.processInfo.environment["COLDHOT_SETTINGS_VISUAL_HOLD"] == "1" {
+            RunLoop.main.run()
+        }
+    }
+
+    @MainActor
+    private static func render(
+        _ view: SettingsView,
+        page: SettingsPage,
+        appearance: NSAppearance.Name,
+        outputPath: String
+    ) throws {
+        let identifiers = AccessibilityIdentifierStore()
+        let hostingView = NSHostingView(
+            rootView: view.environment(
+                \.settingsAccessibilityIdentifierReporter,
+                { identifiers.values.insert($0) }
+            )
+        )
+        hostingView.appearance = NSAppearance(named: appearance)
         hostingView.frame = CGRect(origin: .zero, size: SettingsLayout.defaultContentSize)
         let window = NSWindow(
             contentRect: hostingView.frame,
@@ -60,6 +109,7 @@ enum SettingsVisualCheck {
             backing: .buffered,
             defer: false
         )
+        window.appearance = NSAppearance(named: appearance)
         window.contentView = hostingView
         window.makeKeyAndOrderFront(nil)
         window.layoutIfNeeded()
@@ -75,6 +125,10 @@ enum SettingsVisualCheck {
         expect(window.titlebarAppearsTransparent)
         expect(window.titlebarSeparatorStyle == .none)
         expect(window.toolbar?.isVisible != true)
+
+        expect(identifiers.values.contains("settings-sidebar"))
+        expect(identifiers.values.contains("settings-page-\(page.slug)"))
+        expect(identifiers.values.contains(firstSectionIdentifier(for: page)))
 
         // SwiftUI can restore its standard title bar after the settings
         // window becomes key. The Apple Music-style treatment must persist.
@@ -108,14 +162,8 @@ enum SettingsVisualCheck {
         guard let data = bitmap.representation(using: .png, properties: [:]) else {
             fatalError("Unable to encode settings preview")
         }
-
-        let outputPath = CommandLine.arguments.dropFirst().first
-            ?? "/tmp/coldhot-settings-preview.png"
         try data.write(to: URL(fileURLWithPath: outputPath), options: .atomic)
-        print(outputPath)
-        if ProcessInfo.processInfo.environment["COLDHOT_SETTINGS_VISUAL_HOLD"] == "1" {
-            RunLoop.main.run()
-        }
+        window.orderOut(nil)
     }
 
     @MainActor
@@ -124,4 +172,22 @@ enum SettingsVisualCheck {
             [subview] + descendants(of: subview)
         }
     }
+
+    private static func firstSectionIdentifier(for page: SettingsPage) -> String {
+        if page == .general {
+            if BuildVariant.channel == .direct {
+                return "settings-section-general-0"
+            }
+            if BuildVariant.supportsDockControl {
+                return "settings-section-general-1"
+            }
+            return "settings-section-general-2"
+        }
+        return "settings-section-\(page.slug)-0"
+    }
+}
+
+@MainActor
+private final class AccessibilityIdentifierStore {
+    var values: Set<String> = []
 }
