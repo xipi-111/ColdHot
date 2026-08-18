@@ -1,95 +1,64 @@
 import SwiftUI
+import AppKit
 import UniformTypeIdentifiers
+
+private enum SettingsPage: String, CaseIterable, Identifiable {
+    case appearance = "外观"
+    case metrics = "指标"
+    case alerts = "阈值提醒"
+    case general = "通用"
+    case about = "关于"
+
+    var id: String { rawValue }
+
+    var symbol: String {
+        switch self {
+        case .appearance: "paintbrush"
+        case .metrics: "gauge.with.dots.needle.50percent"
+        case .alerts: "exclamationmark.triangle"
+        case .general: "gearshape"
+        case .about: "info.circle"
+        }
+    }
+}
 
 struct SettingsView: View {
     @ObservedObject var settings: MonitorSettings
     @ObservedObject var panelBackgroundStore: PanelBackgroundStore
+    @ObservedObject var monitor: PerformanceMonitor
+    @ObservedObject var updateController: UpdateController
+    @State private var selectedPage: SettingsPage = .appearance
     @State private var expandedMetrics: Set<MetricKind> = []
     @State private var expandedThresholdMetrics: Set<MetricKind> = []
     @State private var showsPrivacyPolicy = false
     @State private var isChoosingBackground = false
     @State private var backgroundErrorMessage: String?
+    @State private var notificationAuthorizationDenied = false
 
     var body: some View {
-        Form {
-            Section {
-                panelBackgroundSettings
-            } header: {
-                Text("面板背景")
-            } footer: {
-                Text("图片导入后会压缩保存到本机，不会上传，也不会在指标刷新时重复读取。")
-            }
-
-            Section {
-                ForEach(MetricCategory.allCases) { category in
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(category.rawValue)
-                            .font(.headline)
-                            .padding(.top, 5)
-
-                        ForEach(MetricKind.allCases.filter {
-                            $0.category == category && BuildVariant.availableMetrics.contains($0)
-                        }) { metric in
-                            metricSetting(metric)
-                        }
-                    }
-                }
-            } header: {
-                Text("菜单栏指标")
-            } footer: {
-                Text("一级开关控制整张指标卡片；详细项目只会显示在卡片展开区域，并按需启动采样。")
-            }
-
-            Section {
-                ForEach(thresholdParentMetrics) { metric in
-                    thresholdGroup(metric)
-                }
-            } header: {
-                Text("菜单栏阈值显示")
-            } footer: {
-                Text("连续 2 次达到阈值后，菜单栏会显示实时读数；连续 3 次回落后恢复简易图标。多个告警每 5 秒轮换。传感器阈值会增加少量按需采样。")
-            }
-
-            if BuildVariant.supportsDockControl {
-                Section("快捷控制") {
-                    Toggle("在菜单面板显示“Dock 即时弹出”", isOn: $settings.showDockQuickControl)
-                    Text("该快捷开关只影响自动隐藏 Dock 的边缘触发等待时间。切换后 Dock 会短暂重启；关闭时恢复修改前的延迟。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Section("采样") {
-                Picker("刷新间隔", selection: $settings.sampleInterval) {
-                    Text("1 秒（实时）").tag(1.0)
-                    Text("2 秒（推荐）").tag(2.0)
-                    Text("5 秒（省电）").tag(5.0)
-                }
-                .pickerStyle(.segmented)
-
-                Text("收起时只采集摘要。每核心和进程排行等详细信息仅在对应卡片展开时更新；网络延迟测试默认关闭。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section {
+        NavigationSplitView {
+            settingsSidebar
+                .navigationSplitViewColumnWidth(min: 190, ideal: 208, max: 250)
+        } detail: {
+            VStack(spacing: 0) {
                 HStack {
-                    Text(BuildVariant.settingsSummary)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text(selectedPage.rawValue)
+                        .font(.system(size: 30, weight: .bold))
                     Spacer()
-                    Button("恢复默认") { settings.reset() }
                 }
-            }
+                .padding(.horizontal, 30)
+                .padding(.top, 28)
+                .padding(.bottom, 16)
 
-            Section("关于") {
-                LabeledContent("发行渠道", value: BuildVariant.displayName)
-                Button("隐私政策") { showsPrivacyPolicy = true }
+                selectedSettingsPage
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            .background(Color(nsColor: .windowBackgroundColor))
         }
-        .formStyle(.grouped)
-        .frame(width: 560, height: 760)
-        .navigationTitle("ColdHot 设置")
+        .navigationSplitViewStyle(.balanced)
+        .tint(.green)
+        .frame(minWidth: 1_040, minHeight: 760)
+        .background(SettingsWindowConfigurator())
         .sheet(isPresented: $showsPrivacyPolicy) {
             PrivacyPolicyView()
         }
@@ -112,41 +81,295 @@ struct SettingsView: View {
         } message: {
             Text(backgroundErrorMessage ?? "请稍后重试。")
         }
+        .alert("无法开启通知", isPresented: $notificationAuthorizationDenied) {
+            Button("好", role: .cancel) {}
+        } message: {
+            Text("请在系统设置的通知页面允许 ColdHot 发送通知。")
+        }
+    }
+
+    private var settingsSidebar: some View {
+        VStack(spacing: 0) {
+            List(selection: Binding<SettingsPage?>(
+                get: { selectedPage },
+                set: { selection in
+                    if let selection { selectedPage = selection }
+                }
+            )) {
+                Section("设置") {
+                    ForEach(SettingsPage.allCases) { page in
+                        Label(page.rawValue, systemImage: page.symbol)
+                            .tag(page)
+                    }
+                }
+            }
+            .listStyle(.sidebar)
+
+            Divider()
+            HStack(spacing: 9) {
+                Image(systemName: "gauge.with.dots.needle.50percent")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.green)
+                    .frame(width: 28, height: 28)
+                    .background(.quaternary, in: Circle())
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("ColdHot")
+                        .font(.caption.weight(.medium))
+                    Text(currentVersionText)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+        }
     }
 
     @ViewBuilder
-    private var panelBackgroundSettings: some View {
-        if let image = panelBackgroundStore.image {
+    private var selectedSettingsPage: some View {
+        switch selectedPage {
+        case .appearance:
+            appearancePage
+        case .metrics:
+            metricsPage
+        case .alerts:
+            alertsPage
+        case .general:
+            generalPage
+        case .about:
+            aboutPage
+        }
+    }
+
+    private var appearancePage: some View {
+        HStack(spacing: 0) {
+            Form {
+                Section {
+                    panelBackgroundSettings
+                } header: {
+                    Text("面板背景与可读性")
+                } footer: {
+                    Text("图片会压缩后保存在本机，不会上传，也不会在指标刷新时重复读取。")
+                }
+
+                if hasLowReadability {
+                    Section {
+                        Label("当前组合可能使文字或进度条难以辨认。", systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                        Button("恢复推荐可读性") {
+                            settings.restoreRecommendedReadability()
+                        }
+                    }
+                }
+            }
+            .formStyle(.grouped)
+            .frame(minWidth: 390)
+
+            Divider()
+
             VStack(alignment: .leading, spacing: 8) {
                 Text("菜单面板真实范围")
                     .font(.headline)
-
-                HStack {
-                    Spacer(minLength: 0)
-                    PanelAppearancePreview(
-                        image: image,
-                        isBackgroundEnabled: settings.isPanelBackgroundEnabled,
-                        dimOpacity: settings.panelBackgroundDimOpacity,
-                        cardOpacity: settings.panelCardOpacity,
-                        primaryTextOpacity: settings.panelPrimaryTextOpacity,
-                        secondaryTextOpacity: settings.panelSecondaryTextOpacity,
-                        progressOpacity: settings.panelProgressOpacity,
-                        enabledMetrics: previewEnabledMetrics,
-                        showsDockQuickControl: settings.showDockQuickControl
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(.quaternary, lineWidth: 1)
-                    }
-                    Spacer(minLength: 0)
+                PanelAppearancePreview(
+                    image: panelBackgroundStore.image,
+                    isBackgroundEnabled: settings.isPanelBackgroundEnabled,
+                    dimOpacity: settings.panelBackgroundDimOpacity,
+                    cardOpacity: settings.panelCardOpacity,
+                    primaryTextOpacity: settings.panelPrimaryTextOpacity,
+                    secondaryTextOpacity: settings.panelSecondaryTextOpacity,
+                    progressOpacity: settings.panelProgressOpacity,
+                    enabledMetrics: previewEnabledMetrics,
+                    showsDockQuickControl: settings.showDockQuickControl
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(.quaternary, lineWidth: 1)
                 }
+                Text("使用与菜单面板相同的 370px 画布、卡片高度和图片裁切。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(width: 390, alignment: .topLeading)
+            .padding(12)
+            .frame(maxHeight: .infinity, alignment: .top)
+        }
+    }
 
-                Text("按当前启用指标和 Dock 区域显示，与菜单面板使用相同的 370px 画布和图片裁切。")
+    private var metricsPage: some View {
+        Form {
+            Section("快速预设") {
+                ForEach(MonitoringPreset.allCases) { preset in
+                    Button {
+                        settings.applyPreset(preset)
+                    } label: {
+                        HStack {
+                            Text(preset.rawValue)
+                            Spacer()
+                            Text(preset.explanation)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            Section {
+                ForEach(MetricCategory.allCases) { category in
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(category.rawValue)
+                            .font(.headline)
+                            .padding(.top, 5)
+                        ForEach(MetricKind.allCases.filter {
+                            $0.category == category && BuildVariant.availableMetrics.contains($0)
+                        }) { metric in
+                            metricSetting(metric)
+                        }
+                    }
+                }
+            } header: {
+                Text("菜单栏指标")
+            } footer: {
+                Text("一级开关控制整张卡片；详细项目只在卡片展开后按需采样。")
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private var alertsPage: some View {
+        Form {
+            Section("系统通知") {
+                Toggle("达到阈值时通知", isOn: thresholdNotificationsBinding)
+                Toggle(
+                    "恢复正常时通知",
+                    isOn: $settings.thresholdRecoveryNotificationsEnabled
+                )
+                .disabled(!settings.thresholdNotificationsEnabled)
+                Text("默认关闭。相同指标触发通知后会等待 10 分钟，避免反复打扰。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
+            Section {
+                ForEach(thresholdParentMetrics) { metric in
+                    thresholdGroup(metric)
+                }
+            } header: {
+                Text("菜单栏阈值显示")
+            } footer: {
+                Text("连续 2 次达到阈值后显示；连续 3 次回落后恢复。多个告警每 5 秒轮换。")
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private var generalPage: some View {
+        Form {
+            if BuildVariant.channel == .direct {
+                Section("自动更新") {
+                    Toggle(
+                        "自动检查更新",
+                        isOn: Binding(
+                            get: { updateController.automaticallyChecksForUpdates },
+                            set: { updateController.automaticallyChecksForUpdates = $0 }
+                        )
+                    )
+                    Toggle(
+                        "自动下载更新",
+                        isOn: Binding(
+                            get: { updateController.automaticallyDownloadsUpdates },
+                            set: { updateController.automaticallyDownloadsUpdates = $0 }
+                        )
+                    )
+                    .disabled(!updateController.automaticallyChecksForUpdates)
+                    Button("立即检查更新…") { updateController.checkForUpdates() }
+                }
+            }
+
+            if BuildVariant.supportsDockControl {
+                Section("快捷控制") {
+                    Toggle("在菜单面板显示“Dock 即时弹出”", isOn: $settings.showDockQuickControl)
+                    Text("只影响自动隐藏 Dock 的边缘触发等待时间；关闭时恢复修改前的延迟。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Section("采样") {
+                Picker("刷新间隔", selection: $settings.sampleInterval) {
+                    Text("1 秒（实时）").tag(1.0)
+                    Text("2 秒（推荐）").tag(2.0)
+                    Text("5 秒（省电）").tag(5.0)
+                }
+                .pickerStyle(.segmented)
+                Text("收起时只采集摘要；每核心、进程排行和传感器详情仅按需更新。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                HStack {
+                    Text(BuildVariant.settingsSummary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("恢复默认") { settings.reset() }
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private var aboutPage: some View {
+        Form {
+            Section("版本") {
+                LabeledContent("发行渠道", value: BuildVariant.displayName)
+                LabeledContent("当前版本", value: currentVersionText)
+                if BuildVariant.channel == .direct {
+                    Button("检查更新…") { updateController.checkForUpdates() }
+                }
+                Button("隐私政策") { showsPrivacyPolicy = true }
+            }
+
+            Section("设备能力") {
+                capabilityRow("GPU 实时读数", available: monitor.snapshot.gpu.usage != nil)
+                capabilityRow("风扇转速", available: !monitor.snapshot.fans.isEmpty)
+                capabilityRow("温度传感器", available: hasTemperatureReading)
+                capabilityRow(
+                    "系统功率",
+                    available: monitor.snapshot.battery?.systemPowerWatts != nil
+                )
+                Button("重新检测") { monitor.probeCapabilities() }
+            }
+
+            Section("ColdHot 运行影响") {
+                LabeledContent(
+                    "CPU",
+                    value: monitor.selfResourceSnapshot.cpuUsage.formatted(
+                        .number.precision(.fractionLength(1))
+                    ) + "%"
+                )
+                LabeledContent("内存", value: selfMemoryText)
+                LabeledContent(
+                    "唤醒",
+                    value: monitor.selfResourceSnapshot.wakeupsPerSecond.formatted(
+                        .number.precision(.fractionLength(1))
+                    ) + " 次/秒"
+                )
+                Text("该区域每约 5 秒更新，用于确认监控工具自身的资源开销。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear { monitor.probeCapabilities() }
+    }
+
+    @ViewBuilder
+    private var panelBackgroundSettings: some View {
+        if panelBackgroundStore.image != nil {
             HStack(spacing: 10) {
                 Image(systemName: "photo")
                     .foregroundStyle(.secondary)
@@ -279,6 +502,24 @@ struct SettingsView: View {
         )
     }
 
+    private var thresholdNotificationsBinding: Binding<Bool> {
+        Binding(
+            get: { settings.thresholdNotificationsEnabled },
+            set: { enabled in
+                guard enabled else {
+                    settings.thresholdNotificationsEnabled = false
+                    return
+                }
+                ThresholdNotificationController.requestAuthorization { granted in
+                    DispatchQueue.main.async {
+                        settings.thresholdNotificationsEnabled = granted
+                        notificationAuthorizationDenied = !granted
+                    }
+                }
+            }
+        )
+    }
+
     private var panelBackgroundDimOpacityBinding: Binding<Double> {
         Binding(
             get: { settings.panelBackgroundDimOpacity },
@@ -317,6 +558,59 @@ struct SettingsView: View {
     private var previewEnabledMetrics: [MetricKind] {
         MetricKind.allCases.filter {
             BuildVariant.availableMetrics.contains($0) && settings.isEnabled($0)
+        }
+    }
+
+    private var hasLowReadability: Bool {
+        guard settings.isPanelBackgroundEnabled && panelBackgroundStore.hasImage else {
+            return false
+        }
+        return settings.panelCardOpacity < 0.35
+            || settings.panelPrimaryTextOpacity < 0.70
+            || settings.panelSecondaryTextOpacity < 0.65
+            || settings.panelProgressOpacity < 0.65
+    }
+
+    private var hasTemperatureReading: Bool {
+        let temperatures = monitor.snapshot.thermal.temperatures
+        return temperatures.cpu != nil
+            || temperatures.gpu != nil
+            || temperatures.memory != nil
+            || temperatures.nandCelsius != nil
+            || temperatures.battery != nil
+            || temperatures.airflowLeftCelsius != nil
+            || temperatures.airflowRightCelsius != nil
+            || temperatures.wirelessCelsius != nil
+            || temperatures.powerManagement != nil
+    }
+
+    private var selfMemoryText: String {
+        ByteCountFormatter.string(
+            fromByteCount: Int64(clamping: monitor.selfResourceSnapshot.memoryBytes),
+            countStyle: .memory
+        )
+    }
+
+    private var currentVersionText: String {
+        let version = Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleShortVersionString"
+        ) as? String ?? "—"
+        let build = Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleVersion"
+        ) as? String ?? "—"
+        return "\(version)（\(build)）"
+    }
+
+    private func capabilityRow(_ title: String, available: Bool) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Label(
+                available ? "本机可用" : "本机未返回",
+                systemImage: available ? "checkmark.circle.fill" : "minus.circle"
+            )
+            .font(.caption)
+            .foregroundStyle(available ? Color.green : Color.secondary)
         }
     }
 
@@ -547,5 +841,73 @@ struct SettingsView: View {
                 }
             }
         )
+    }
+}
+
+private struct SettingsWindowConfigurator: NSViewRepresentable {
+    func makeNSView(context: Context) -> SettingsWindowConfigurationView {
+        SettingsWindowConfigurationView()
+    }
+
+    func updateNSView(_ nsView: SettingsWindowConfigurationView, context: Context) {
+        nsView.configureWindow()
+    }
+}
+
+private final class SettingsWindowConfigurationView: NSView {
+    private weak var configuredWindow: NSWindow?
+    private var windowObservers: [NSObjectProtocol] = []
+
+    deinit {
+        removeWindowObservers()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        configureWindow()
+    }
+
+    func configureWindow() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let window = self.window else { return }
+            self.applyConfiguration(to: window)
+            self.observeWindowIfNeeded(window)
+        }
+    }
+
+    private func applyConfiguration(to window: NSWindow) {
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
+        window.styleMask.insert(.fullSizeContentView)
+        window.toolbar?.isVisible = false
+    }
+
+    private func observeWindowIfNeeded(_ window: NSWindow) {
+        guard configuredWindow !== window else { return }
+        removeWindowObservers()
+        configuredWindow = window
+
+        let center = NotificationCenter.default
+        windowObservers = [
+            NSWindow.didBecomeKeyNotification,
+            NSWindow.didResizeNotification
+        ].map { name in
+            center.addObserver(
+                forName: name,
+                object: window,
+                queue: .main
+            ) { [weak self, weak window] _ in
+                guard let self, let window,
+                      self.configuredWindow === window else { return }
+                self.applyConfiguration(to: window)
+            }
+        }
+    }
+
+    private func removeWindowObservers() {
+        let center = NotificationCenter.default
+        windowObservers.forEach(center.removeObserver)
+        windowObservers.removeAll()
     }
 }

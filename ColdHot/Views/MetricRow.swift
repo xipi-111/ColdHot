@@ -17,6 +17,7 @@ struct MetricCard<ExpandedContent: View>: View {
     let detail: String
     var progress: Double?
     let isExpanded: Bool
+    var showsExpandedContent = false
     let onToggle: () -> Void
     @ViewBuilder let expandedContent: () -> ExpandedContent
 
@@ -77,7 +78,9 @@ struct MetricCard<ExpandedContent: View>: View {
                 }
                 .environment(\.detailSectionTint, metric.tint)
                 .padding(11)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .opacity(showsExpandedContent ? 1 : 0)
+                .accessibilityHidden(!showsExpandedContent)
+                .transition(.identity)
             }
         }
         .background {
@@ -122,6 +125,50 @@ struct DetailValueRow: View {
                 .multilineTextAlignment(.trailing)
                 .panelTextReadability(.primary)
         }
+    }
+}
+
+struct MiniTrendChart: View {
+    let points: [MetricTrendPoint]
+    let tint: Color
+
+    var body: some View {
+        Canvas { context, size in
+            guard points.count >= 2 else { return }
+            let values = points.map(\.value)
+            guard let minimum = values.min(), let maximum = values.max() else { return }
+            let valueRange = max(maximum - minimum, 1)
+
+            var baseline = Path()
+            baseline.move(to: CGPoint(x: 0, y: size.height - 0.5))
+            baseline.addLine(to: CGPoint(x: size.width, y: size.height - 0.5))
+            context.stroke(
+                baseline,
+                with: .color(.secondary.opacity(0.18)),
+                lineWidth: 1
+            )
+
+            var line = Path()
+            for (index, point) in points.enumerated() {
+                let x = size.width * CGFloat(index) / CGFloat(points.count - 1)
+                let normalized = (point.value - minimum) / valueRange
+                let y = size.height - CGFloat(normalized) * (size.height - 3) - 1.5
+                let location = CGPoint(x: x, y: y)
+                if index == 0 {
+                    line.move(to: location)
+                } else {
+                    line.addLine(to: location)
+                }
+            }
+            context.stroke(
+                line,
+                with: .color(tint),
+                style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round)
+            )
+        }
+        .frame(height: 42)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("最近 60 秒趋势")
     }
 }
 

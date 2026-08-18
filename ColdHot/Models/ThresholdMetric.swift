@@ -316,6 +316,8 @@ struct ThresholdMeasurement: Equatable {
 struct ThresholdAlert: Identifiable, Equatable {
     let kind: ThresholdMetric
     let measurement: ThresholdMeasurement
+    let thresholdValue: Double
+    let activatedAt: Date
 
     var id: ThresholdMetric { kind }
 }
@@ -331,11 +333,13 @@ struct ThresholdTriggerState {
     private(set) var recoveryCount = 0
     private(set) var isActive = false
     private(set) var latestMeasurement: ThresholdMeasurement?
+    private(set) var activatedAt: Date?
 
     mutating func update(
         kind: ThresholdMetric,
         rule: ThresholdRule,
-        measurement: ThresholdMeasurement
+        measurement: ThresholdMeasurement,
+        at date: Date = Date()
     ) -> ThresholdTransition {
         latestMeasurement = measurement
 
@@ -346,6 +350,7 @@ struct ThresholdTriggerState {
                     isActive = false
                     triggerCount = 0
                     recoveryCount = 0
+                    activatedAt = nil
                     return .recovered
                 }
             } else {
@@ -360,6 +365,7 @@ struct ThresholdTriggerState {
                 isActive = true
                 triggerCount = 0
                 recoveryCount = 0
+                activatedAt = date
                 return .activated
             }
         } else {

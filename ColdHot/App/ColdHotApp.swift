@@ -1,5 +1,8 @@
 import SwiftUI
 import AppKit
+#if DIRECT_DISTRIBUTION
+import Sparkle
+#endif
 
 @main
 struct ColdHotApp: App {
@@ -7,6 +10,7 @@ struct ColdHotApp: App {
     @StateObject private var monitor: PerformanceMonitor
     @StateObject private var dockController: DockDelayController
     @StateObject private var panelBackgroundStore: PanelBackgroundStore
+    @StateObject private var updateController: UpdateController
 
     init() {
         let settings = MonitorSettings()
@@ -14,6 +18,7 @@ struct ColdHotApp: App {
         _monitor = StateObject(wrappedValue: PerformanceMonitor(settings: settings))
         _dockController = StateObject(wrappedValue: DockDelayController())
         _panelBackgroundStore = StateObject(wrappedValue: PanelBackgroundStore())
+        _updateController = StateObject(wrappedValue: UpdateController())
     }
 
     var body: some Scene {
@@ -22,7 +27,8 @@ struct ColdHotApp: App {
                 monitor: monitor,
                 settings: settings,
                 dockController: dockController,
-                panelBackgroundStore: panelBackgroundStore
+                panelBackgroundStore: panelBackgroundStore,
+                updateController: updateController
             )
         } label: {
             MenuBarStatusLabel(monitor: monitor, fallbackSymbol: menuBarSymbol)
@@ -32,7 +38,9 @@ struct ColdHotApp: App {
         Settings {
             SettingsView(
                 settings: settings,
-                panelBackgroundStore: panelBackgroundStore
+                panelBackgroundStore: panelBackgroundStore,
+                monitor: monitor,
+                updateController: updateController
             )
         }
     }
@@ -46,6 +54,61 @@ struct ColdHotApp: App {
         }
     }
 }
+
+#if DIRECT_DISTRIBUTION
+@MainActor
+final class UpdateController: NSObject, ObservableObject, SPUUpdaterDelegate {
+    @Published private(set) var availableVersion: String?
+
+    private lazy var updaterController = SPUStandardUpdaterController(
+        startingUpdater: true,
+        updaterDelegate: self,
+        userDriverDelegate: nil
+    )
+
+    override init() {
+        super.init()
+        _ = updaterController
+    }
+
+    var automaticallyChecksForUpdates: Bool {
+        get { updaterController.updater.automaticallyChecksForUpdates }
+        set {
+            updaterController.updater.automaticallyChecksForUpdates = newValue
+            objectWillChange.send()
+        }
+    }
+
+    var automaticallyDownloadsUpdates: Bool {
+        get { updaterController.updater.automaticallyDownloadsUpdates }
+        set {
+            updaterController.updater.automaticallyDownloadsUpdates = newValue
+            objectWillChange.send()
+        }
+    }
+
+    func checkForUpdates() {
+        updaterController.checkForUpdates(nil)
+    }
+
+    func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
+        availableVersion = item.displayVersionString
+    }
+
+    func updaterDidNotFindUpdate(_ updater: SPUUpdater, error: Error) {
+        availableVersion = nil
+    }
+}
+#else
+@MainActor
+final class UpdateController: ObservableObject {
+    @Published private(set) var availableVersion: String?
+    var automaticallyChecksForUpdates = false
+    var automaticallyDownloadsUpdates = false
+    init() {}
+    func checkForUpdates() {}
+}
+#endif
 
 private struct MenuBarStatusLabel: View {
     @ObservedObject var monitor: PerformanceMonitor

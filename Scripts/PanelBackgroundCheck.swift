@@ -13,6 +13,8 @@ enum PanelBackgroundCheck {
         checkBackgroundRendering()
         checkReadabilityRendering()
         checkPanelPreviewRendering()
+        checkLiveScrollIndicatorSuppression()
+        checkCollapsedScrollLock()
         if CommandLine.arguments.count == 3 {
             try writePreviewSnapshot(
                 backgroundPath: CommandLine.arguments[1],
@@ -302,14 +304,111 @@ enum PanelBackgroundCheck {
             primaryTextOpacity: 0.90,
             secondaryTextOpacity: 0.70,
             progressOpacity: 0.60,
-            enabledMetrics: [.cpu, .gpu, .memory, .disk, .network],
+            enabledMetrics: MetricKind.allCases,
             showsDockQuickControl: true
         )
         let hostingView = NSHostingView(rootView: preview.fixedSize())
         let size = hostingView.fittingSize
+        hostingView.frame = CGRect(origin: .zero, size: size)
+        hostingView.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
 
         expect(abs(size.width - 370) < 1)
         expect(size.height > size.width)
+        expect(
+            PanelLayout.metricsViewportHeight(
+                metricCount: MetricKind.allCases.count,
+                hasExpandedMetric: false
+            ) == 512
+        )
+
+        let scrollViews = descendants(of: hostingView).compactMap { $0 as? NSScrollView }
+        guard let metricsScrollView = scrollViews.max(by: {
+            $0.contentView.bounds.height < $1.contentView.bounds.height
+        }) else {
+            fatalError("Unable to locate metrics scroll view")
+        }
+        let viewportHeight = metricsScrollView.contentView.bounds.height
+        let documentHeight = metricsScrollView.documentView?.bounds.height ?? .infinity
+        expect(viewportHeight >= 511)
+        expect(documentHeight <= viewportHeight + 1)
+        expect(!metricsScrollView.hasVerticalScroller)
+
+    }
+
+    @MainActor
+    private static func checkLiveScrollIndicatorSuppression() {
+        let hostingView = NSHostingView(rootView: LivePanelScrollHarness(allowsScrolling: true))
+        hostingView.frame = CGRect(x: 0, y: 0, width: 370, height: 200)
+        let window = NSWindow(
+            contentRect: hostingView.frame,
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hostingView
+        defer { window.close() }
+        window.layoutIfNeeded()
+        hostingView.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.10))
+
+        let scrollViews = descendants(of: hostingView).compactMap { $0 as? NSScrollView }
+        guard let scrollView = scrollViews.max(by: {
+            ($0.documentView?.bounds.height ?? 0)
+                < ($1.documentView?.bounds.height ?? 0)
+        }) else {
+            fatalError("Unable to locate live panel scroll view")
+        }
+        let viewportHeight = scrollView.contentView.bounds.height
+        let documentHeight = scrollView.documentView?.bounds.height ?? 0
+        expect(documentHeight > viewportHeight)
+        expect(!scrollView.hasVerticalScroller)
+
+        // Reproduce the live-menu failure: AppKit restores the indicator as
+        // a scroll gesture begins after SwiftUI has rebuilt the ScrollView.
+        scrollView.hasVerticalScroller = true
+        NotificationCenter.default.post(
+            name: NSScrollView.willStartLiveScrollNotification,
+            object: scrollView
+        )
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        expect(!scrollView.hasVerticalScroller)
+    }
+
+    @MainActor
+    private static func checkCollapsedScrollLock() {
+        let hostingView = NSHostingView(
+            rootView: LivePanelScrollHarness(allowsScrolling: false)
+        )
+        hostingView.frame = CGRect(x: 0, y: 0, width: 370, height: 200)
+        let window = NSWindow(
+            contentRect: hostingView.frame,
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hostingView
+        defer { window.close() }
+        window.layoutIfNeeded()
+        hostingView.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.10))
+
+        let scrollViews = descendants(of: hostingView).compactMap { $0 as? NSScrollView }
+        guard let scrollView = scrollViews.max(by: {
+            ($0.documentView?.bounds.height ?? 0)
+                < ($1.documentView?.bounds.height ?? 0)
+        }) else {
+            fatalError("Unable to locate locked panel scroll view")
+        }
+
+        scrollView.contentView.scroll(to: NSPoint(x: 0, y: 120))
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+        NotificationCenter.default.post(
+            name: NSView.boundsDidChangeNotification,
+            object: scrollView.contentView
+        )
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        expect(abs(scrollView.contentView.bounds.origin.y) < 0.5)
     }
 
     @MainActor
@@ -328,7 +427,7 @@ enum PanelBackgroundCheck {
             primaryTextOpacity: 1,
             secondaryTextOpacity: 0.75,
             progressOpacity: 0.80,
-            enabledMetrics: [.cpu, .gpu, .memory, .disk, .network],
+            enabledMetrics: MetricKind.allCases,
             showsDockQuickControl: true
         )
         let hostingView = NSHostingView(rootView: preview.fixedSize())
@@ -437,6 +536,12 @@ enum PanelBackgroundCheck {
         return color
     }
 
+    private static func descendants(of view: NSView) -> [NSView] {
+        view.subviews.flatMap { subview in
+            [subview] + descendants(of: subview)
+        }
+    }
+
     @MainActor
     private static func renderCenterPixel(
         image: NSImage,
@@ -513,5 +618,26 @@ enum PanelBackgroundCheck {
         guard condition() else {
             fatalError("Check failed", file: file, line: line)
         }
+    }
+}
+
+private struct LivePanelScrollHarness: View {
+    let allowsScrolling: Bool
+
+    var body: some View {
+        ScrollViewReader { _ in
+            ScrollView {
+                VStack(spacing: 8) {
+                    ForEach(0..<20, id: \.self) { index in
+                        Text("指标 \(index)")
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 42)
+                    }
+                }
+            }
+            .scrollIndicators(.never)
+            .hidePanelVerticalScrollIndicator(allowsScrolling: allowsScrolling)
+        }
+        .frame(width: 370, height: 200)
     }
 }

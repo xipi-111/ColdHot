@@ -1,12 +1,23 @@
 import SwiftUI
 import AppKit
 
+private struct PanelScrollRequest: Equatable {
+    let id: Int
+    let metric: MetricKind
+    let animationDuration: TimeInterval
+}
+
 struct DashboardView: View {
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var monitor: PerformanceMonitor
     @ObservedObject var settings: MonitorSettings
     @ObservedObject var dockController: DockDelayController
     @ObservedObject var panelBackgroundStore: PanelBackgroundStore
+    @ObservedObject var updateController: UpdateController
+    @State private var requestedScroll: PanelScrollRequest?
+    @State private var visibleDetailsMetric: MetricKind?
+    @State private var expansionTransitionID = 0
 
     private let bytesFormatter: ByteCountFormatter = {
         let formatter = ByteCountFormatter()
@@ -18,20 +29,56 @@ struct DashboardView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+
+            if !settings.hasCompletedOnboarding {
+                Divider()
+                onboardingBanner
+            }
+
             Divider()
 
-            if settings.enabledMetrics.isEmpty {
+            if enabledMetricKinds.isEmpty {
                 emptyState
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(enabledMetricKinds) { metric in
-                            card(for: metric)
+                ScrollViewReader { scrollProxy in
+                    ScrollView {
+                        VStack(spacing: 8) {
+                            ForEach(enabledMetricKinds) { metric in
+                                card(
+                                    for: metric,
+                                    onToggle: { toggle(metric) }
+                                )
+                                .id(metric)
+                            }
+                        }
+                        .padding(12)
+                    }
+                    .scrollIndicators(.never)
+                    .hidePanelVerticalScrollIndicator(allowsScrolling:
+                        PanelScrollBehavior.allowsScrolling(
+                            expandedMetric: monitor.expandedMetric
+                        )
+                    )
+                    .scrollDisabled(!PanelScrollBehavior.allowsScrolling(
+                        expandedMetric: monitor.expandedMetric
+                    ))
+                    .frame(height: metricsViewportHeight)
+                    .onChange(of: requestedScroll) { _, request in
+                        guard let request else { return }
+                        DispatchQueue.main.async {
+                            if request.animationDuration > 0 {
+                                withAnimation(.smooth(duration: request.animationDuration)) {
+                                    scrollProxy.scrollTo(request.metric, anchor: .top)
+                                }
+                            } else {
+                                scrollProxy.scrollTo(request.metric, anchor: .top)
+                            }
+                            if requestedScroll?.id == request.id {
+                                requestedScroll = nil
+                            }
                         }
                     }
-                    .padding(12)
                 }
-                .frame(height: metricsViewportHeight)
             }
 
             if BuildVariant.supportsDockControl && settings.showDockQuickControl {
@@ -60,19 +107,25 @@ struct DashboardView: View {
         )
         .clipped()
         .onDisappear {
+            expansionTransitionID += 1
             monitor.setExpandedMetric(nil)
+            requestedScroll = nil
+            visibleDetailsMetric = nil
         }
         .onChange(of: settings.enabledMetrics) { _, metrics in
             if let expandedMetric = monitor.expandedMetric, !metrics.contains(expandedMetric) {
-                monitor.setExpandedMetric(nil)
+                animateExpansion(to: nil, scrollTarget: nil)
             }
         }
     }
 
     private var enabledMetricKinds: [MetricKind] {
-        MetricKind.allCases.filter {
-            BuildVariant.availableMetrics.contains($0) && settings.isEnabled($0)
-        }
+        let alertMetrics = Set(monitor.activeThresholdAlerts.map { $0.kind.metric })
+        return PanelMetricVisibility.visibleMetrics(
+            available: MetricKind.allCases.filter(BuildVariant.availableMetrics.contains),
+            userEnabled: settings.enabledMetrics,
+            activeAlertMetrics: alertMetrics
+        )
     }
 
     private var metricsViewportHeight: CGFloat {
@@ -105,13 +158,35 @@ struct DashboardView: View {
 
             HStack(spacing: 5) {
                 Circle().fill(thermalColor).frame(width: 7, height: 7)
-                Text(thermalTitle)
+                Text("热状态 \(thermalTitle)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .panelTextReadability(.secondary)
             }
         }
         .padding(12)
+    }
+
+    private var onboardingBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "menubar.rectangle")
+                .foregroundStyle(.green)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("ColdHot 已在菜单栏运行")
+                    .font(.system(size: 12, weight: .semibold))
+                    .panelTextReadability(.primary)
+                Text("收起时只采集摘要；详细指标和传感器按需启动。")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .panelTextReadability(.secondary)
+            }
+            Spacer()
+            Button("知道了") { settings.completeOnboarding() }
+                .controlSize(.small)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
     }
 
     private var emptyState: some View {
@@ -194,6 +269,15 @@ struct DashboardView: View {
                 }
             }
             .buttonStyle(.plain)
+            if let version = updateController.availableVersion {
+                Divider().frame(height: 14)
+                Button(action: updateController.checkForUpdates) {
+                    Label("更新", systemImage: "arrow.down.circle.fill")
+                        .panelTextReadability(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("ColdHot \(version) 可用")
+            }
             Spacer()
             if BuildVariant.supportsFanReadings {
                 fanStatus
@@ -271,7 +355,10 @@ struct DashboardView: View {
     }
 
     @ViewBuilder
-    private func card(for metric: MetricKind) -> some View {
+    private func card(
+        for metric: MetricKind,
+        onToggle: @escaping () -> Void
+    ) -> some View {
         switch metric {
         case .cpu:
             MetricCard(
@@ -280,8 +367,12 @@ struct DashboardView: View {
                 detail: "用户 \(percent(monitor.snapshot.cpu.user)) · 系统 \(percent(monitor.snapshot.cpu.system))",
                 progress: monitor.snapshot.cpu.usage / 100,
                 isExpanded: monitor.expandedMetric == metric,
-                onToggle: { toggle(metric) }
-            ) { cpuDetails }
+                showsExpandedContent: visibleDetailsMetric == metric,
+                onToggle: onToggle
+            ) {
+                trendSection(metric)
+                cpuDetails
+            }
         case .gpu:
             MetricCard(
                 metric: metric,
@@ -289,8 +380,12 @@ struct DashboardView: View {
                 detail: "Apple GPU 设备利用率",
                 progress: monitor.snapshot.gpu.usage.map { $0 / 100 },
                 isExpanded: monitor.expandedMetric == metric,
-                onToggle: { toggle(metric) }
-            ) { gpuDetails }
+                showsExpandedContent: visibleDetailsMetric == metric,
+                onToggle: onToggle
+            ) {
+                trendSection(metric)
+                gpuDetails
+            }
         case .memory:
             MetricCard(
                 metric: metric,
@@ -300,32 +395,48 @@ struct DashboardView: View {
                     ? Double(monitor.snapshot.memory.used) / Double(monitor.snapshot.memory.total)
                     : nil,
                 isExpanded: monitor.expandedMetric == metric,
-                onToggle: { toggle(metric) }
-            ) { memoryDetails }
+                showsExpandedContent: visibleDetailsMetric == metric,
+                onToggle: onToggle
+            ) {
+                trendSection(metric)
+                memoryDetails
+            }
         case .disk:
             MetricCard(
                 metric: metric,
                 value: "读 \(rate(monitor.snapshot.disk.read))",
                 detail: "写 \(rate(monitor.snapshot.disk.write))",
                 isExpanded: monitor.expandedMetric == metric,
-                onToggle: { toggle(metric) }
-            ) { diskDetails }
+                showsExpandedContent: visibleDetailsMetric == metric,
+                onToggle: onToggle
+            ) {
+                trendSection(metric)
+                diskDetails
+            }
         case .network:
             MetricCard(
                 metric: metric,
                 value: "↓ \(rate(monitor.snapshot.network.download))",
                 detail: "↑ \(rate(monitor.snapshot.network.upload)) · \(monitor.snapshot.network.interface)",
                 isExpanded: monitor.expandedMetric == metric,
-                onToggle: { toggle(metric) }
-            ) { networkDetails }
+                showsExpandedContent: visibleDetailsMetric == metric,
+                onToggle: onToggle
+            ) {
+                trendSection(metric)
+                networkDetails
+            }
         case .thermal:
             MetricCard(
                 metric: metric,
                 value: thermalTitle,
                 detail: "系统热压力（无需管理员权限）",
                 isExpanded: monitor.expandedMetric == metric,
-                onToggle: { toggle(metric) }
-            ) { thermalDetails }
+                showsExpandedContent: visibleDetailsMetric == metric,
+                onToggle: onToggle
+            ) {
+                trendSection(metric)
+                thermalDetails
+            }
         case .battery:
             if let battery = monitor.snapshot.battery {
                 MetricCard(
@@ -334,24 +445,162 @@ struct DashboardView: View {
                     detail: batterySummary(battery),
                     progress: battery.percentage / 100,
                     isExpanded: monitor.expandedMetric == metric,
-                    onToggle: { toggle(metric) }
-                ) { batteryDetails(battery) }
+                    showsExpandedContent: visibleDetailsMetric == metric,
+                    onToggle: onToggle
+                ) {
+                    trendSection(metric)
+                    batteryDetails(battery)
+                }
             } else {
                 MetricCard(
                     metric: metric,
                     value: "不可用",
                     detail: "未检测到内置电池",
                     isExpanded: monitor.expandedMetric == metric,
-                    onToggle: { toggle(metric) }
-                ) { noDetails }
+                    showsExpandedContent: visibleDetailsMetric == metric,
+                    onToggle: onToggle
+                ) {
+                    trendSection(metric)
+                    noDetails
+                }
             }
         }
     }
 
     private func toggle(_ metric: MetricKind) {
-        let next = monitor.expandedMetric == metric ? nil : metric
-        withAnimation(.easeInOut(duration: 0.16)) {
-            monitor.setExpandedMetric(next)
+        let decision = PanelExpansionBehavior.decision(
+            toggling: metric,
+            current: monitor.expandedMetric
+        )
+        animateExpansion(
+            to: decision.expandedMetric,
+            scrollTarget: decision.scrollTarget
+        )
+    }
+
+    private func animateExpansion(
+        to target: MetricKind?,
+        scrollTarget: MetricKind?
+    ) {
+        expansionTransitionID += 1
+        let transitionID = expansionTransitionID
+        let plan = PanelExpansionAnimationPlan.transition(
+            from: monitor.expandedMetric,
+            to: target,
+            reduceMotion: reduceMotion
+        )
+
+        withAnimation(animation(
+            duration: plan.initialDetailsAnimationDuration,
+            curve: .out
+        )) {
+            visibleDetailsMetric = plan.initialVisibleDetails
+        }
+
+        perform(after: plan.layoutDelay, transitionID: transitionID) {
+            withAnimation(smoothAnimation(duration: plan.layoutAnimationDuration)) {
+                monitor.setExpandedMetric(plan.layoutMetric)
+            }
+        }
+
+        perform(after: plan.detailsDelay, transitionID: transitionID) {
+            withAnimation(animation(
+                duration: plan.finalDetailsAnimationDuration,
+                curve: .in
+            )) {
+                visibleDetailsMetric = plan.finalVisibleDetails
+            }
+        }
+
+        let finalScrollTarget = scrollTarget ?? plan.scrollTarget
+        if let finalScrollTarget {
+            perform(after: plan.scrollDelay, transitionID: transitionID) {
+                requestedScroll = PanelScrollRequest(
+                    id: transitionID,
+                    metric: finalScrollTarget,
+                    animationDuration: plan.scrollAnimationDuration
+                )
+            }
+        }
+    }
+
+    private enum AnimationCurve {
+        case `in`
+        case out
+        case inOut
+    }
+
+    private func animation(duration: TimeInterval, curve: AnimationCurve) -> Animation? {
+        guard duration > 0 else { return nil }
+        switch curve {
+        case .in:
+            return .easeIn(duration: duration)
+        case .out:
+            return .easeOut(duration: duration)
+        case .inOut:
+            return .easeInOut(duration: duration)
+        }
+    }
+
+    private func smoothAnimation(duration: TimeInterval) -> Animation? {
+        guard duration > 0 else { return nil }
+        return .smooth(duration: duration)
+    }
+
+    private func perform(
+        after delay: TimeInterval,
+        transitionID: Int,
+        action: @escaping () -> Void
+    ) {
+        let guardedAction = {
+            guard expansionTransitionID == transitionID else { return }
+            action()
+        }
+        if delay <= 0 {
+            guardedAction()
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                guardedAction()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func trendSection(_ metric: MetricKind) -> some View {
+        let points = monitor.trendHistory[metric] ?? []
+        DetailSection(title: "最近 60 秒") {
+            if points.count >= 2 {
+                MiniTrendChart(points: points, tint: metric.tint)
+                HStack {
+                    Text("低 \(trendValueText(points.map(\.value).min() ?? 0, metric: metric))")
+                    Spacer()
+                    Text("高 \(trendValueText(points.map(\.value).max() ?? 0, metric: metric))")
+                }
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .panelTextReadability(.secondary)
+            } else {
+                Text("正在积累趋势数据…")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .panelTextReadability(.secondary)
+            }
+        }
+    }
+
+    private func trendValueText(_ value: Double, metric: MetricKind) -> String {
+        switch metric {
+        case .cpu, .gpu, .memory, .battery:
+            return percent(value)
+        case .disk, .network:
+            return value.formatted(.number.precision(.fractionLength(1))) + " MB/s"
+        case .thermal:
+            switch Int(value.rounded()) {
+            case 1: return "偏热"
+            case 2: return "较热"
+            case 3: return "严重"
+            default: return "正常"
+            }
         }
     }
 

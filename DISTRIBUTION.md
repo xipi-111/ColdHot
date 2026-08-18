@@ -53,6 +53,7 @@ NOTARYTOOL_PROFILE="ColdHotNotary" \
 4. 生成并签名 DMG。
 5. 提交 Apple 公证，等待 Accepted 后装订公证票据。
 6. 再次验证 DMG，并生成 SHA-256 校验文件。
+7. 如存在对应版本的 `RELEASE-NOTES-<版本>.md`，使用钥匙串中的 Sparkle EdDSA 私钥生成 `docs/appcast.xml`。
 
 正式包输出到：
 
@@ -67,6 +68,9 @@ dist/release/<版本>-<构建号>/
 - 创建与对外版本一致的标签，例如 `v1.1.0`。
 - 上传 DMG 和 `SHA256SUMS.txt` 作为 Release Assets。
 - 将该 Release 标记为 Latest。
+- 提交并推送本次更新后的 `docs/appcast.xml`，使已安装版本可以发现新版本。
 - 官网下载按钮可指向 GitHub 的 Latest Release 页面，或更新为对应 DMG 的固定地址。
 
-用户升级时先退出 ColdHot，再打开新 DMG，将 `ColdHot.app` 拖入“应用程序”并选择替换。由于 Bundle ID 不变，现有偏好设置会继续保留。
+首次启用自动更新的版本仍需用户手动安装一次。此后 ColdHot 会从 GitHub 托管的 appcast 检查版本，并由 Sparkle 在应用内完成签名校验、下载和替换；不需要单独部署服务器。由于 Bundle ID 不变，现有偏好设置会继续保留。
+
+Sparkle 私钥只保存在开发者钥匙串中，不提交到仓库。公开的 `SUPublicEDKey` 位于官网版 Info.plist。若构建脚本首次访问该私钥，macOS 可能要求确认钥匙串访问权限。

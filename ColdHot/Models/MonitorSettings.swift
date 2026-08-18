@@ -1,6 +1,22 @@
 import Foundation
 import Combine
 
+enum MonitoringPreset: String, CaseIterable, Identifiable {
+    case minimal = "极简"
+    case everyday = "日常"
+    case diagnostic = "诊断"
+
+    var id: String { rawValue }
+
+    var explanation: String {
+        switch self {
+        case .minimal: "CPU、内存、热状态和电池"
+        case .everyday: "显示全部一级指标，详细采样保持克制"
+        case .diagnostic: "启用全部指标和详细项目"
+        }
+    }
+}
+
 final class MonitorSettings: ObservableObject {
     static let defaultMetrics: Set<MetricKind> = [
         .cpu, .gpu, .memory, .network, .thermal
@@ -26,6 +42,26 @@ final class MonitorSettings: ObservableObject {
     @Published var showDockQuickControl: Bool {
         didSet { defaults.set(showDockQuickControl, forKey: Keys.showDockQuickControl) }
     }
+
+    @Published var thresholdNotificationsEnabled: Bool {
+        didSet {
+            defaults.set(
+                thresholdNotificationsEnabled,
+                forKey: Keys.thresholdNotificationsEnabled
+            )
+        }
+    }
+
+    @Published var thresholdRecoveryNotificationsEnabled: Bool {
+        didSet {
+            defaults.set(
+                thresholdRecoveryNotificationsEnabled,
+                forKey: Keys.thresholdRecoveryNotificationsEnabled
+            )
+        }
+    }
+
+    @Published private(set) var hasCompletedOnboarding: Bool
 
     @Published private(set) var isPanelBackgroundEnabled: Bool
 
@@ -69,6 +105,15 @@ final class MonitorSettings: ObservableObject {
         sampleInterval = [1.0, 2.0, 5.0].contains(storedInterval) ? storedInterval : 2.0
 
         showDockQuickControl = defaults.object(forKey: Keys.showDockQuickControl) as? Bool ?? true
+
+        thresholdNotificationsEnabled = defaults.object(
+            forKey: Keys.thresholdNotificationsEnabled
+        ) as? Bool ?? false
+        thresholdRecoveryNotificationsEnabled = defaults.object(
+            forKey: Keys.thresholdRecoveryNotificationsEnabled
+        ) as? Bool ?? true
+        hasCompletedOnboarding = defaults.object(forKey: Keys.hasCompletedOnboarding) as? Bool
+            ?? false
 
         isPanelBackgroundEnabled = defaults.object(forKey: Keys.isPanelBackgroundEnabled) as? Bool
             ?? false
@@ -218,11 +263,53 @@ final class MonitorSettings: ObservableObject {
         defaults.set(clamped, forKey: Keys.panelProgressOpacity)
     }
 
+    func applyPreset(_ preset: MonitoringPreset) {
+        switch preset {
+        case .minimal:
+            enabledMetrics = Set([.cpu, .memory, .thermal, .battery])
+                .intersection(BuildVariant.availableMetrics)
+            enabledDetails = Set([
+                .cpuBreakdown,
+                .cpuLoad,
+                .memoryComposition,
+                .memorySwap,
+                .thermalDuration,
+                .batteryRemaining,
+                .batteryHealth,
+                .batteryCycles
+            ]).intersection(BuildVariant.availableDetails)
+        case .everyday:
+            enabledMetrics = Set(MetricKind.allCases)
+                .intersection(BuildVariant.availableMetrics)
+            enabledDetails = MetricDetail.defaults
+        case .diagnostic:
+            enabledMetrics = Set(MetricKind.allCases)
+                .intersection(BuildVariant.availableMetrics)
+            enabledDetails = Set(MetricDetail.allCases)
+                .intersection(BuildVariant.availableDetails)
+        }
+    }
+
+    func restoreRecommendedReadability() {
+        setPanelBackgroundDimOpacity(0.35)
+        setPanelCardOpacity(0.65)
+        setPanelPrimaryTextOpacity(1)
+        setPanelSecondaryTextOpacity(0.85)
+        setPanelProgressOpacity(0.85)
+    }
+
+    func completeOnboarding() {
+        hasCompletedOnboarding = true
+        defaults.set(true, forKey: Keys.hasCompletedOnboarding)
+    }
+
     func reset() {
         enabledMetrics = Self.defaultMetrics.intersection(BuildVariant.availableMetrics)
         enabledDetails = MetricDetail.defaults
         sampleInterval = 2.0
         showDockQuickControl = true
+        thresholdNotificationsEnabled = false
+        thresholdRecoveryNotificationsEnabled = true
         setPanelBackgroundEnabled(false)
         setPanelBackgroundDimOpacity(Self.defaultPanelBackgroundDimOpacity)
         setPanelCardOpacity(Self.defaultPanelCardOpacity)
@@ -275,6 +362,9 @@ final class MonitorSettings: ObservableObject {
         static let enabledDetails = "enabledDetails"
         static let sampleInterval = "sampleInterval"
         static let showDockQuickControl = "showDockQuickControl"
+        static let thresholdNotificationsEnabled = "thresholdNotificationsEnabled"
+        static let thresholdRecoveryNotificationsEnabled = "thresholdRecoveryNotificationsEnabled"
+        static let hasCompletedOnboarding = "hasCompletedOnboarding"
         static let isPanelBackgroundEnabled = "isPanelBackgroundEnabled"
         static let panelBackgroundDimOpacity = "panelBackgroundDimOpacity"
         static let panelCardOpacity = "panelCardOpacity"

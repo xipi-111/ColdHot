@@ -18,6 +18,8 @@ struct ColdHotScreenshotRenderer {
 
         let monitor = PerformanceMonitor(settings: settings)
         let dockController = DockDelayController()
+        let panelBackgroundStore = PanelBackgroundStore()
+        let updateController = UpdateController()
 
         // CPU utilization requires two samples. Keep the main run loop moving
         // so the real sampler can publish its first complete snapshot.
@@ -31,7 +33,9 @@ struct ColdHotScreenshotRenderer {
                 shot: shot,
                 monitor: monitor,
                 settings: settings,
-                dockController: dockController
+                dockController: dockController,
+                panelBackgroundStore: panelBackgroundStore,
+                updateController: updateController
             )
             .renderPNG()
         }

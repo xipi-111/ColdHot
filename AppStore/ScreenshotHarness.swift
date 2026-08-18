@@ -1,6 +1,14 @@
 import AppKit
 import SwiftUI
 
+@MainActor
+final class UpdateController: ObservableObject {
+    @Published private(set) var availableVersion: String?
+    var automaticallyChecksForUpdates = false
+    var automaticallyDownloadsUpdates = false
+    func checkForUpdates() {}
+}
+
 /// Renders the real App Store dashboard inside an App Store screenshot-sized
 /// window. This file is intentionally not part of the ColdHot Xcode target.
 #if !SCREENSHOT_RENDERER
@@ -9,6 +17,8 @@ struct ColdHotScreenshotApp: App {
     @StateObject private var settings: MonitorSettings
     @StateObject private var monitor: PerformanceMonitor
     @StateObject private var dockController: DockDelayController
+    @StateObject private var panelBackgroundStore: PanelBackgroundStore
+    @StateObject private var updateController: UpdateController
 
     private let shot: ScreenshotKind
 
@@ -31,6 +41,8 @@ struct ColdHotScreenshotApp: App {
         _settings = StateObject(wrappedValue: settings)
         _monitor = StateObject(wrappedValue: PerformanceMonitor(settings: settings))
         _dockController = StateObject(wrappedValue: DockDelayController())
+        _panelBackgroundStore = StateObject(wrappedValue: PanelBackgroundStore())
+        _updateController = StateObject(wrappedValue: UpdateController())
     }
 
     var body: some Scene {
@@ -39,7 +51,9 @@ struct ColdHotScreenshotApp: App {
                 shot: shot,
                 monitor: monitor,
                 settings: settings,
-                dockController: dockController
+                dockController: dockController,
+                panelBackgroundStore: panelBackgroundStore,
+                updateController: updateController
             )
         }
         .windowStyle(.hiddenTitleBar)
@@ -47,7 +61,12 @@ struct ColdHotScreenshotApp: App {
         .defaultSize(width: 1_280, height: 800)
 
         Settings {
-            SettingsView(settings: settings)
+            SettingsView(
+                settings: settings,
+                panelBackgroundStore: panelBackgroundStore,
+                monitor: monitor,
+                updateController: updateController
+            )
         }
     }
 }
@@ -126,6 +145,8 @@ struct ScreenshotCanvas: View {
     @ObservedObject var monitor: PerformanceMonitor
     @ObservedObject var settings: MonitorSettings
     @ObservedObject var dockController: DockDelayController
+    @ObservedObject var panelBackgroundStore: PanelBackgroundStore
+    @ObservedObject var updateController: UpdateController
 
     var body: some View {
         artwork
@@ -208,7 +229,9 @@ struct ScreenshotCanvas: View {
                 DashboardView(
                     monitor: monitor,
                     settings: settings,
-                    dockController: dockController
+                    dockController: dockController,
+                    panelBackgroundStore: panelBackgroundStore,
+                    updateController: updateController
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .overlay {

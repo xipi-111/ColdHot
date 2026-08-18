@@ -62,7 +62,9 @@ if [[ "$mode" == "local-test" ]]; then
 
     direct_app="$direct_data/Build/Products/DirectRelease/ColdHot.app"
     xattr -cr "$direct_app"
-    codesign --force --deep --sign - --options runtime "$direct_app"
+    codesign --force --deep --sign - --options runtime \
+        --entitlements "$project_root/Configurations/ColdHot-LocalTest.entitlements" \
+        "$direct_app"
 
     codesign --verify --deep --strict "$direct_app"
 
@@ -120,4 +122,13 @@ xcrun stapler validate "$direct_dmg"
 spctl --assess --type open --context context:primary-signature --verbose=4 "$direct_dmg"
 
 (cd "$output_dir" && shasum -a 256 "$(basename "$direct_dmg")" > SHA256SUMS.txt)
+release_notes="$project_root/RELEASE-NOTES-$version.md"
+if [[ -f "$release_notes" ]]; then
+    "$project_root/Scripts/generate-update-feed.sh" \
+        "$direct_dmg" \
+        "$release_notes" \
+        "v$version"
+else
+    echo "未找到 $release_notes，跳过 appcast 更新。" >&2
+fi
 echo "已生成生产发行包：$output_dir"

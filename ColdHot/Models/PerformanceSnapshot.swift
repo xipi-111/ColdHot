@@ -18,6 +18,20 @@ struct PerformanceSnapshot {
     static let empty = PerformanceSnapshot()
 }
 
+struct MetricTrendPoint: Identifiable, Equatable {
+    let timestamp: Date
+    let value: Double
+
+    var id: Date { timestamp }
+}
+
+struct SelfResourceSnapshot: Equatable {
+    var cpuUsage = 0.0
+    var memoryBytes: UInt64 = 0
+    var wakeupsPerSecond = 0.0
+    var timestamp = Date()
+}
+
 struct CPUSnapshot {
     var usage = 0.0
     var user = 0.0

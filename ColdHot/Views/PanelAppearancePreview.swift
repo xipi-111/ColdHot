@@ -42,6 +42,8 @@ struct PanelAppearancePreview: View {
                     metricCount: enabledMetrics.count,
                     hasExpandedMetric: false
                 ))
+                .scrollIndicators(.never)
+                .hidePanelVerticalScrollIndicator(allowsScrolling: false)
                 .scrollDisabled(true)
             }
 
@@ -97,7 +99,7 @@ struct PanelAppearancePreview: View {
 
             HStack(spacing: 5) {
                 Circle().fill(.green).frame(width: 7, height: 7)
-                Text("正常")
+                Text("热状态 正常")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .panelTextReadability(.secondary)
