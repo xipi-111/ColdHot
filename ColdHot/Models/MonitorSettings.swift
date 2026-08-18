@@ -5,6 +5,7 @@ final class MonitorSettings: ObservableObject {
     static let defaultMetrics: Set<MetricKind> = [
         .cpu, .gpu, .memory, .network, .thermal
     ]
+    static let defaultPanelBackgroundDimOpacity = 0.35
 
     @Published private(set) var enabledMetrics: Set<MetricKind> {
         didSet { persistMetrics() }
@@ -21,6 +22,10 @@ final class MonitorSettings: ObservableObject {
     @Published var showDockQuickControl: Bool {
         didSet { defaults.set(showDockQuickControl, forKey: Keys.showDockQuickControl) }
     }
+
+    @Published private(set) var isPanelBackgroundEnabled: Bool
+
+    @Published private(set) var panelBackgroundDimOpacity: Double
 
     @Published private(set) var thresholdRules: [ThresholdMetric: ThresholdRule] {
         didSet { persistThresholdRules() }
@@ -52,6 +57,18 @@ final class MonitorSettings: ObservableObject {
         sampleInterval = [1.0, 2.0, 5.0].contains(storedInterval) ? storedInterval : 2.0
 
         showDockQuickControl = defaults.object(forKey: Keys.showDockQuickControl) as? Bool ?? true
+
+        isPanelBackgroundEnabled = defaults.object(forKey: Keys.isPanelBackgroundEnabled) as? Bool
+            ?? false
+
+        if defaults.object(forKey: Keys.panelBackgroundDimOpacity) != nil {
+            let storedOpacity = defaults.double(forKey: Keys.panelBackgroundDimOpacity)
+            panelBackgroundDimOpacity = storedOpacity.isFinite
+                ? min(max(storedOpacity, 0), 0.70)
+                : Self.defaultPanelBackgroundDimOpacity
+        } else {
+            panelBackgroundDimOpacity = Self.defaultPanelBackgroundDimOpacity
+        }
 
         let defaultRules = Dictionary(uniqueKeysWithValues: ThresholdMetric.allCases.map {
             ($0, ThresholdRule.defaultRule(for: $0))
@@ -122,11 +139,25 @@ final class MonitorSettings: ObservableObject {
         thresholdRules = updated
     }
 
+    func setPanelBackgroundEnabled(_ enabled: Bool) {
+        isPanelBackgroundEnabled = enabled
+        defaults.set(enabled, forKey: Keys.isPanelBackgroundEnabled)
+    }
+
+    func setPanelBackgroundDimOpacity(_ opacity: Double) {
+        guard opacity.isFinite else { return }
+        let clamped = min(max(opacity, 0), 0.70)
+        panelBackgroundDimOpacity = clamped
+        defaults.set(clamped, forKey: Keys.panelBackgroundDimOpacity)
+    }
+
     func reset() {
         enabledMetrics = Self.defaultMetrics.intersection(BuildVariant.availableMetrics)
         enabledDetails = MetricDetail.defaults
         sampleInterval = 2.0
         showDockQuickControl = true
+        setPanelBackgroundEnabled(false)
+        setPanelBackgroundDimOpacity(Self.defaultPanelBackgroundDimOpacity)
         thresholdRules = Dictionary(uniqueKeysWithValues: ThresholdMetric.allCases.map {
             ($0, ThresholdRule.defaultRule(for: $0))
         })
@@ -152,6 +183,8 @@ final class MonitorSettings: ObservableObject {
         static let enabledDetails = "enabledDetails"
         static let sampleInterval = "sampleInterval"
         static let showDockQuickControl = "showDockQuickControl"
+        static let isPanelBackgroundEnabled = "isPanelBackgroundEnabled"
+        static let panelBackgroundDimOpacity = "panelBackgroundDimOpacity"
         static let thresholdRules = "thresholdRules"
     }
 }
