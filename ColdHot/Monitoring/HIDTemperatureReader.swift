@@ -71,7 +71,8 @@ final class HIDTemperatureReader {
     func readTemperatures(for group: HIDTemperatureGroup) -> [Double] {
         services.compactMap { item in
             guard matches(item.name, group: group),
-                  let event = copyEvent(item.service, 15, 0, 0) else { return nil }
+                  let retainedEvent = copyEvent(item.service, 15, 0, 0) else { return nil }
+            let event = retainedEvent.takeRetainedValue()
             let value = getFloatValue(event, 983_040)
             guard value.isFinite, value >= 5, value <= 125 else { return nil }
             return value
@@ -103,7 +104,12 @@ private struct NamedHIDTemperatureService {
 
 private typealias HIDClientCreate = @convention(c) (CFAllocator?) -> IOHIDEventSystemClient?
 private typealias HIDClientSetMatching = @convention(c) (IOHIDEventSystemClient?, CFDictionary?) -> Void
-private typealias HIDServiceCopyEvent = @convention(c) (IOHIDServiceClient?, Int64, Int32, Int64) -> HIDTemperatureEvent?
+private typealias HIDServiceCopyEvent = @convention(c) (
+    IOHIDServiceClient?,
+    Int64,
+    Int32,
+    Int64
+) -> Unmanaged<HIDTemperatureEvent>?
 private typealias HIDEventGetFloatValue = @convention(c) (HIDTemperatureEvent?, UInt32) -> Double
 private typealias HIDServiceCopyProperty = @convention(c) (IOHIDServiceClient?, CFString?) -> CFTypeRef?
 #endif

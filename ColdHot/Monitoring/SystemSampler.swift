@@ -18,6 +18,7 @@ final class SystemSampler {
     private var cachedRankings = ProcessRankings()
     private var thermalState = ProcessInfo.processInfo.thermalState
     private var thermalStateSince = Date()
+    private let processCPUAccounting = ProcessCPUAccounting.current
     private let latencyProbe = NetworkLatencyProbe()
     private let smcPowerReader = SMCPowerReader()
     private lazy var hidTemperatureReader = HIDTemperatureReader()
@@ -245,21 +246,27 @@ final class SystemSampler {
         host_page_size(mach_host_self(), &pageSize)
         let page = UInt64(pageSize)
         let total = ProcessInfo.processInfo.physicalMemory
-        let available = UInt64(info.free_count + info.speculative_count) * page
+        let accounting = MemoryAccounting(
+            pageSize: page,
+            physicalMemory: total
+        ).calculate(
+            internalPages: UInt64(info.internal_page_count),
+            purgeablePages: UInt64(info.purgeable_count),
+            wiredPages: UInt64(info.wire_count),
+            compressedPages: UInt64(info.compressor_page_count),
+            externalPages: UInt64(info.external_page_count)
+        )
         var snapshot = MemorySnapshot(
-            used: total > available ? total - available : 0,
+            used: accounting.used,
             total: total,
             pressure: readMemoryPressure()
         )
 
         if request.includes(.memoryComposition) {
-            let appPages = info.internal_page_count > info.purgeable_count
-                ? info.internal_page_count - info.purgeable_count
-                : 0
-            snapshot.app = UInt64(appPages) * page
-            snapshot.wired = UInt64(info.wire_count) * page
-            snapshot.compressed = UInt64(info.compressor_page_count) * page
-            snapshot.cached = UInt64(info.external_page_count) * page
+            snapshot.app = accounting.app
+            snapshot.wired = accounting.wired
+            snapshot.compressed = accounting.compressed
+            snapshot.cached = accounting.cached
         }
         if request.includes(.memorySwap), let swap = readSwapUsage() {
             snapshot.swapUsed = swap.used
@@ -625,7 +632,10 @@ final class SystemSampler {
             )
             if let elapsed, elapsed > 0, let previous = previousProcessCounters[pid] {
                 if counters.cpuTime >= previous.cpuTime {
-                    activity.cpuUsage = Double(counters.cpuTime - previous.cpuTime) / 1_000_000_000 / elapsed * 100
+                    activity.cpuUsage = processCPUAccounting.cpuUsage(
+                        deltaTicks: counters.cpuTime - previous.cpuTime,
+                        elapsedSeconds: elapsed
+                    )
                 }
                 if counters.wakeups >= previous.wakeups {
                     activity.wakeupsPerSecond = Double(counters.wakeups - previous.wakeups) / elapsed
@@ -678,6 +688,82 @@ final class SystemSampler {
         return length > 0 ? String(cString: buffer) : "PID \(pid)"
     }
 #endif
+}
+
+struct MemoryAccounting {
+    let pageSize: UInt64
+    let physicalMemory: UInt64
+
+    func calculate(
+        internalPages: UInt64,
+        purgeablePages: UInt64,
+        wiredPages: UInt64,
+        compressedPages: UInt64,
+        externalPages: UInt64
+    ) -> MemoryAccountingResult {
+        let appPages = internalPages >= purgeablePages
+            ? internalPages - purgeablePages
+            : 0
+        let app = bytes(for: appPages)
+        let wired = bytes(for: wiredPages)
+        let compressed = bytes(for: compressedPages)
+        let cached = clampedSum([
+            bytes(for: externalPages),
+            bytes(for: purgeablePages)
+        ])
+
+        return MemoryAccountingResult(
+            used: clampedSum([app, wired, compressed]),
+            app: app,
+            wired: wired,
+            compressed: compressed,
+            cached: cached
+        )
+    }
+
+    private func bytes(for pages: UInt64) -> UInt64 {
+        let (value, overflow) = pages.multipliedReportingOverflow(by: pageSize)
+        return overflow ? physicalMemory : min(value, physicalMemory)
+    }
+
+    private func clampedSum(_ values: [UInt64]) -> UInt64 {
+        values.reduce(0) { partial, value in
+            let (sum, overflow) = partial.addingReportingOverflow(value)
+            return overflow ? physicalMemory : min(sum, physicalMemory)
+        }
+    }
+}
+
+struct MemoryAccountingResult {
+    let used: UInt64
+    let app: UInt64
+    let wired: UInt64
+    let compressed: UInt64
+    let cached: UInt64
+}
+
+struct ProcessCPUAccounting {
+    let nanosecondsPerTick: Double
+
+    init(numer: UInt32, denom: UInt32) {
+        nanosecondsPerTick = denom > 0
+            ? Double(numer) / Double(denom)
+            : 1
+    }
+
+    func cpuUsage(deltaTicks: UInt64, elapsedSeconds: TimeInterval) -> Double {
+        guard elapsedSeconds > 0 else { return 0 }
+        let elapsedCPUSeconds = Double(deltaTicks) * nanosecondsPerTick / 1_000_000_000
+        return elapsedCPUSeconds / elapsedSeconds * 100
+    }
+
+    static var current: ProcessCPUAccounting {
+        var timebase = mach_timebase_info_data_t()
+        guard mach_timebase_info(&timebase) == KERN_SUCCESS else {
+            return ProcessCPUAccounting(numer: 1, denom: 1)
+        }
+        return ProcessCPUAccounting(numer: timebase.numer, denom: timebase.denom)
+    }
 }
 
 private struct CPUTicks {
