@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import ImageIO
+import SwiftUI
 import UniformTypeIdentifiers
 
 @main
@@ -9,6 +10,7 @@ enum PanelBackgroundCheck {
     static func main() throws {
         checkSettingsPersistence()
         try checkImageLifecycle()
+        checkBackgroundRendering()
         print("Panel background checks passed")
     }
 
@@ -135,6 +137,79 @@ enum PanelBackgroundCheck {
             fatalError("Unable to inspect image dimensions")
         }
         return CGSize(width: width.doubleValue, height: height.doubleValue)
+    }
+
+    @MainActor
+    private static func checkBackgroundRendering() {
+        let image = solidImage(width: 100, height: 100, color: .systemRed)
+        let clearPixel = renderCenterPixel(image: image, dimOpacity: 0)
+        let dimmedPixel = renderCenterPixel(image: image, dimOpacity: 0.35)
+
+        expect(clearPixel.redComponent > 0.9)
+        expect(clearPixel.redComponent > clearPixel.greenComponent)
+        expect(dimmedPixel.redComponent < clearPixel.redComponent * 0.8)
+        expect(dimmedPixel.redComponent > dimmedPixel.greenComponent)
+    }
+
+    @MainActor
+    private static func renderCenterPixel(
+        image: NSImage,
+        dimOpacity: Double
+    ) -> NSColor {
+        let side: CGFloat = 100
+        let content = PanelBackgroundView(
+            image: image,
+            isEnabled: true,
+            dimOpacity: dimOpacity
+        )
+        .frame(width: side, height: side)
+        let hostingView = NSHostingView(rootView: content)
+        hostingView.frame = CGRect(x: 0, y: 0, width: side, height: side)
+        hostingView.layoutSubtreeIfNeeded()
+
+        guard let bitmap = hostingView.bitmapImageRepForCachingDisplay(
+            in: hostingView.bounds
+        ) else {
+            fatalError("Unable to create background render bitmap")
+        }
+        hostingView.cacheDisplay(in: hostingView.bounds, to: bitmap)
+        guard let color = bitmap.colorAt(
+            x: bitmap.pixelsWide / 2,
+            y: bitmap.pixelsHigh / 2
+        )?.usingColorSpace(.deviceRGB) else {
+            fatalError("Unable to sample background render")
+        }
+        return color
+    }
+
+    private static func solidImage(
+        width: Int,
+        height: Int,
+        color: NSColor
+    ) -> NSImage {
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGBitmapInfo.byteOrder32Big.rawValue
+            | CGImageAlphaInfo.premultipliedLast.rawValue
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo
+        ) else {
+            fatalError("Unable to create solid image context")
+        }
+        context.setFillColor(color.cgColor)
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        guard let image = context.makeImage() else {
+            fatalError("Unable to create solid image")
+        }
+        return NSImage(
+            cgImage: image,
+            size: NSSize(width: width, height: height)
+        )
     }
 
     private static func expect(

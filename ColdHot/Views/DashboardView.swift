@@ -6,6 +6,7 @@ struct DashboardView: View {
     @ObservedObject var monitor: PerformanceMonitor
     @ObservedObject var settings: MonitorSettings
     @ObservedObject var dockController: DockDelayController
+    @ObservedObject var panelBackgroundStore: PanelBackgroundStore
 
     private let bytesFormatter: ByteCountFormatter = {
         let formatter = ByteCountFormatter()
@@ -42,7 +43,14 @@ struct DashboardView: View {
             footer
         }
         .frame(width: 370)
-        .background(.regularMaterial)
+        .background {
+            PanelBackgroundView(
+                image: panelBackgroundStore.image,
+                isEnabled: settings.isPanelBackgroundEnabled,
+                dimOpacity: settings.panelBackgroundDimOpacity
+            )
+        }
+        .clipped()
         .onDisappear {
             monitor.setExpandedMetric(nil)
         }

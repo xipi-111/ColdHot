@@ -6,12 +6,14 @@ struct ColdHotApp: App {
     @StateObject private var settings: MonitorSettings
     @StateObject private var monitor: PerformanceMonitor
     @StateObject private var dockController: DockDelayController
+    @StateObject private var panelBackgroundStore: PanelBackgroundStore
 
     init() {
         let settings = MonitorSettings()
         _settings = StateObject(wrappedValue: settings)
         _monitor = StateObject(wrappedValue: PerformanceMonitor(settings: settings))
         _dockController = StateObject(wrappedValue: DockDelayController())
+        _panelBackgroundStore = StateObject(wrappedValue: PanelBackgroundStore())
     }
 
     var body: some Scene {
@@ -19,7 +21,8 @@ struct ColdHotApp: App {
             DashboardView(
                 monitor: monitor,
                 settings: settings,
-                dockController: dockController
+                dockController: dockController,
+                panelBackgroundStore: panelBackgroundStore
             )
         } label: {
             MenuBarStatusLabel(monitor: monitor, fallbackSymbol: menuBarSymbol)
@@ -27,7 +30,10 @@ struct ColdHotApp: App {
         .menuBarExtraStyle(.window)
 
         Settings {
-            SettingsView(settings: settings)
+            SettingsView(
+                settings: settings,
+                panelBackgroundStore: panelBackgroundStore
+            )
         }
     }
 

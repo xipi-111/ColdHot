@@ -1,13 +1,25 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @ObservedObject var settings: MonitorSettings
+    @ObservedObject var panelBackgroundStore: PanelBackgroundStore
     @State private var expandedMetrics: Set<MetricKind> = []
     @State private var expandedThresholdMetrics: Set<MetricKind> = []
     @State private var showsPrivacyPolicy = false
+    @State private var isChoosingBackground = false
+    @State private var backgroundErrorMessage: String?
 
     var body: some View {
         Form {
+            Section {
+                panelBackgroundSettings
+            } header: {
+                Text("面板背景")
+            } footer: {
+                Text("图片导入后会压缩保存到本机，不会上传，也不会在指标刷新时重复读取。")
+            }
+
             Section {
                 ForEach(MetricCategory.allCases) { category in
                     VStack(alignment: .leading, spacing: 10) {
@@ -80,6 +92,147 @@ struct SettingsView: View {
         .navigationTitle("ColdHot 设置")
         .sheet(isPresented: $showsPrivacyPolicy) {
             PrivacyPolicyView()
+        }
+        .fileImporter(
+            isPresented: $isChoosingBackground,
+            allowedContentTypes: [.image],
+            allowsMultipleSelection: false,
+            onCompletion: handleBackgroundSelection
+        )
+        .alert(
+            "无法设置背景图片",
+            isPresented: Binding(
+                get: { backgroundErrorMessage != nil },
+                set: { isPresented in
+                    if !isPresented { backgroundErrorMessage = nil }
+                }
+            )
+        ) {
+            Button("好", role: .cancel) { backgroundErrorMessage = nil }
+        } message: {
+            Text(backgroundErrorMessage ?? "请稍后重试。")
+        }
+    }
+
+    @ViewBuilder
+    private var panelBackgroundSettings: some View {
+        if let image = panelBackgroundStore.image {
+            HStack(alignment: .top, spacing: 14) {
+                PanelBackgroundView(
+                    image: image,
+                    isEnabled: true,
+                    dimOpacity: settings.panelBackgroundDimOpacity
+                )
+                .frame(width: 160, height: 90)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(.quaternary, lineWidth: 1)
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("自定义图片")
+                        .font(.headline)
+                    Text("自动裁切铺满整个菜单面板")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button("更换图片…") { isChoosingBackground = true }
+                }
+                Spacer()
+            }
+
+            Toggle(
+                "使用自定义背景",
+                isOn: panelBackgroundEnabledBinding
+            )
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("深色遮罩")
+                    Spacer()
+                    Text("\(Int((settings.panelBackgroundDimOpacity * 100).rounded()))%")
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+                Slider(
+                    value: panelBackgroundDimOpacityBinding,
+                    in: 0...0.70,
+                    step: 0.05
+                )
+                .accessibilityLabel("深色遮罩强度")
+            }
+
+            HStack {
+                Spacer()
+                Button("移除背景", role: .destructive) {
+                    removeBackgroundImage()
+                }
+            }
+        } else {
+            HStack(spacing: 12) {
+                Image(systemName: "photo.on.rectangle.angled")
+                    .font(.system(size: 24))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 38, height: 38)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 9))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("使用自己的图片")
+                        .font(.headline)
+                    Text("支持系统可读取的 PNG、JPEG、HEIC 和 TIFF 图片")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("选择图片…") { isChoosingBackground = true }
+            }
+        }
+    }
+
+    private var panelBackgroundEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { settings.isPanelBackgroundEnabled },
+            set: { enabled in
+                settings.setPanelBackgroundEnabled(
+                    enabled && panelBackgroundStore.hasImage
+                )
+            }
+        )
+    }
+
+    private var panelBackgroundDimOpacityBinding: Binding<Double> {
+        Binding(
+            get: { settings.panelBackgroundDimOpacity },
+            set: settings.setPanelBackgroundDimOpacity
+        )
+    }
+
+    private func handleBackgroundSelection(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            do {
+                try panelBackgroundStore.importImage(from: url)
+                settings.setPanelBackgroundEnabled(true)
+            } catch {
+                backgroundErrorMessage = error.localizedDescription
+            }
+        case .failure(let error):
+            let cocoaError = error as NSError
+            guard cocoaError.domain != NSCocoaErrorDomain
+                    || cocoaError.code != NSUserCancelledError else {
+                return
+            }
+            backgroundErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func removeBackgroundImage() {
+        settings.setPanelBackgroundEnabled(false)
+        do {
+            try panelBackgroundStore.removeImage()
+        } catch {
+            backgroundErrorMessage = error.localizedDescription
         }
     }
 
