@@ -16,8 +16,28 @@ struct DashboardView: View {
     @ObservedObject var panelBackgroundStore: PanelBackgroundStore
     @ObservedObject var updateController: UpdateController
     @State private var requestedScroll: PanelScrollRequest?
-    @State private var visibleDetailsMetric: MetricKind?
+    @State private var presentationState: PanelPresentationState<MetricKind>
     @State private var expansionTransitionID = 0
+
+    init(
+        monitor: PerformanceMonitor,
+        settings: MonitorSettings,
+        dockController: DockDelayController,
+        panelBackgroundStore: PanelBackgroundStore,
+        updateController: UpdateController,
+        initialVisibleDetailsMetric: MetricKind? = nil
+    ) {
+        _monitor = ObservedObject(wrappedValue: monitor)
+        _settings = ObservedObject(wrappedValue: settings)
+        _dockController = ObservedObject(wrappedValue: dockController)
+        _panelBackgroundStore = ObservedObject(wrappedValue: panelBackgroundStore)
+        _updateController = ObservedObject(wrappedValue: updateController)
+        _presentationState = State(
+            initialValue: PanelPresentationState(
+                visibleDetailsMetric: initialVisibleDetailsMetric
+            )
+        )
+    }
 
     private let bytesFormatter: ByteCountFormatter = {
         let formatter = ByteCountFormatter()
@@ -110,7 +130,7 @@ struct DashboardView: View {
             expansionTransitionID += 1
             monitor.setExpandedMetric(nil)
             requestedScroll = nil
-            visibleDetailsMetric = nil
+            presentationState.visibleDetailsMetric = nil
         }
         .onChange(of: settings.enabledMetrics) { _, metrics in
             if let expandedMetric = monitor.expandedMetric, !metrics.contains(expandedMetric) {
@@ -132,6 +152,13 @@ struct DashboardView: View {
         PanelLayout.metricsViewportHeight(
             metricCount: enabledMetricKinds.count,
             hasExpandedMetric: monitor.expandedMetric != nil
+        )
+    }
+
+    private func showsExpandedContent(for metric: MetricKind) -> Bool {
+        presentationState.showsExpandedContent(
+            for: metric,
+            expandedMetric: monitor.expandedMetric
         )
     }
 
@@ -367,7 +394,7 @@ struct DashboardView: View {
                 detail: "用户 \(percent(monitor.snapshot.cpu.user)) · 系统 \(percent(monitor.snapshot.cpu.system))",
                 progress: monitor.snapshot.cpu.usage / 100,
                 isExpanded: monitor.expandedMetric == metric,
-                showsExpandedContent: visibleDetailsMetric == metric,
+                showsExpandedContent: showsExpandedContent(for: metric),
                 onToggle: onToggle
             ) {
                 trendSection(metric)
@@ -380,7 +407,7 @@ struct DashboardView: View {
                 detail: "Apple GPU 设备利用率",
                 progress: monitor.snapshot.gpu.usage.map { $0 / 100 },
                 isExpanded: monitor.expandedMetric == metric,
-                showsExpandedContent: visibleDetailsMetric == metric,
+                showsExpandedContent: showsExpandedContent(for: metric),
                 onToggle: onToggle
             ) {
                 trendSection(metric)
@@ -395,7 +422,7 @@ struct DashboardView: View {
                     ? Double(monitor.snapshot.memory.used) / Double(monitor.snapshot.memory.total)
                     : nil,
                 isExpanded: monitor.expandedMetric == metric,
-                showsExpandedContent: visibleDetailsMetric == metric,
+                showsExpandedContent: showsExpandedContent(for: metric),
                 onToggle: onToggle
             ) {
                 trendSection(metric)
@@ -407,7 +434,7 @@ struct DashboardView: View {
                 value: "读 \(rate(monitor.snapshot.disk.read))",
                 detail: "写 \(rate(monitor.snapshot.disk.write))",
                 isExpanded: monitor.expandedMetric == metric,
-                showsExpandedContent: visibleDetailsMetric == metric,
+                showsExpandedContent: showsExpandedContent(for: metric),
                 onToggle: onToggle
             ) {
                 trendSection(metric)
@@ -419,7 +446,7 @@ struct DashboardView: View {
                 value: "↓ \(rate(monitor.snapshot.network.download))",
                 detail: "↑ \(rate(monitor.snapshot.network.upload)) · \(monitor.snapshot.network.interface)",
                 isExpanded: monitor.expandedMetric == metric,
-                showsExpandedContent: visibleDetailsMetric == metric,
+                showsExpandedContent: showsExpandedContent(for: metric),
                 onToggle: onToggle
             ) {
                 trendSection(metric)
@@ -431,7 +458,7 @@ struct DashboardView: View {
                 value: thermalTitle,
                 detail: "系统热压力（无需管理员权限）",
                 isExpanded: monitor.expandedMetric == metric,
-                showsExpandedContent: visibleDetailsMetric == metric,
+                showsExpandedContent: showsExpandedContent(for: metric),
                 onToggle: onToggle
             ) {
                 trendSection(metric)
@@ -445,7 +472,7 @@ struct DashboardView: View {
                     detail: batterySummary(battery),
                     progress: battery.percentage / 100,
                     isExpanded: monitor.expandedMetric == metric,
-                    showsExpandedContent: visibleDetailsMetric == metric,
+                    showsExpandedContent: showsExpandedContent(for: metric),
                     onToggle: onToggle
                 ) {
                     trendSection(metric)
@@ -457,7 +484,7 @@ struct DashboardView: View {
                     value: "不可用",
                     detail: "未检测到内置电池",
                     isExpanded: monitor.expandedMetric == metric,
-                    showsExpandedContent: visibleDetailsMetric == metric,
+                    showsExpandedContent: showsExpandedContent(for: metric),
                     onToggle: onToggle
                 ) {
                     trendSection(metric)
@@ -494,7 +521,7 @@ struct DashboardView: View {
             duration: plan.initialDetailsAnimationDuration,
             curve: .out
         )) {
-            visibleDetailsMetric = plan.initialVisibleDetails
+            presentationState.visibleDetailsMetric = plan.initialVisibleDetails
         }
 
         perform(after: plan.layoutDelay, transitionID: transitionID) {
@@ -508,7 +535,7 @@ struct DashboardView: View {
                 duration: plan.finalDetailsAnimationDuration,
                 curve: .in
             )) {
-                visibleDetailsMetric = plan.finalVisibleDetails
+                presentationState.visibleDetailsMetric = plan.finalVisibleDetails
             }
         }
 

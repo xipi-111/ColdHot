@@ -36,6 +36,7 @@ enum SettingsVisualCheck {
         expect(SettingsSidebarSelection.move(from: .appearance, direction: .up) == .about)
         expect(SettingsSidebarSelection.move(from: .about, direction: .down) == .appearance)
         expect(SettingsSidebarSelection.move(from: .metrics, direction: .down) == .alerts)
+        verifySidebarActivation()
 
         let suiteName = "com.xipiyoung.ColdHot.settings-visual-check"
         guard let defaults = UserDefaults(suiteName: suiteName) else {
@@ -66,14 +67,13 @@ enum SettingsVisualCheck {
             ("aqua", .aqua),
             ("darkAqua", .darkAqua)
         ]
+        var renderedCaseCount = 0
         for appearance in appearances {
             for page in SettingsPage.allCases {
-                let sizes: [(slug: String?, value: CGSize)] = page == .appearance
-                    ? [
-                        ("920x720", SettingsLayout.defaultContentSize),
-                        ("860x680", SettingsLayout.minimumContentSize)
-                    ]
-                    : [(nil, SettingsLayout.defaultContentSize)]
+                let sizes: [(slug: String, value: CGSize)] = [
+                    ("920x720", SettingsLayout.defaultContentSize),
+                    ("860x680", SettingsLayout.minimumContentSize)
+                ]
                 for size in sizes {
                     let view = SettingsView(
                         settings: settings,
@@ -82,9 +82,8 @@ enum SettingsVisualCheck {
                         updateController: UpdateController(),
                         initialPage: page
                     )
-                    let sizeSuffix = size.slug.map { "-\($0)" } ?? ""
                     let outputPath = outputDirectory
-                        + "/\(appearance.slug)-\(page.slug)\(sizeSuffix).png"
+                        + "/\(appearance.slug)-\(page.slug)-\(size.slug).png"
                     try render(
                         view,
                         page: page,
@@ -92,12 +91,70 @@ enum SettingsVisualCheck {
                         size: size.value,
                         outputPath: outputPath
                     )
+                    renderedCaseCount += 1
                     print(outputPath)
                 }
             }
         }
+        expect(renderedCaseCount == appearances.count * SettingsPage.allCases.count * 2)
         if ProcessInfo.processInfo.environment["COLDHOT_SETTINGS_VISUAL_HOLD"] == "1" {
             RunLoop.main.run()
+        }
+    }
+
+    @MainActor
+    private static func verifySidebarActivation() {
+        let selection = SidebarSelectionStore()
+        let hostingView = NSHostingView(
+            rootView: SettingsSidebar(
+                selection: Binding(
+                    get: { selection.value },
+                    set: { selection.value = $0 }
+                ),
+                versionText: "1.3.0 (15)"
+            )
+        )
+        hostingView.frame = NSRect(x: 0, y: 0, width: 204, height: 680)
+        let window = NSWindow(
+            contentRect: hostingView.frame,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hostingView
+        window.orderFront(nil)
+        window.layoutIfNeeded()
+        hostingView.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.25))
+
+        expect(selection.value == .appearance)
+        // At this fixed 680pt sidebar height, the point is centered in the
+        // second visible navigation row (Metrics). Delivering real AppKit
+        // mouse events exercises the SwiftUI Button action and selection
+        // binding instead of injecting SettingsView.initialPage.
+        sendMouseClick(to: window, at: NSPoint(x: 80, y: 560))
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        expect(selection.value == .metrics)
+        window.orderOut(nil)
+    }
+
+    @MainActor
+    private static func sendMouseClick(to window: NSWindow, at point: NSPoint) {
+        for eventType in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            guard let event = NSEvent.mouseEvent(
+                with: eventType,
+                location: point,
+                modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber,
+                context: nil,
+                eventNumber: 0,
+                clickCount: 1,
+                pressure: eventType == .leftMouseDown ? 1 : 0
+            ) else {
+                fatalError("Unable to synthesize sidebar click")
+            }
+            window.sendEvent(event)
         }
     }
 
@@ -123,10 +180,9 @@ enum SettingsVisualCheck {
                 )
         )
         hostingView.appearance = NSAppearance(named: appearance)
-        hostingView.frame = CGRect(
-            origin: .zero,
-            size: SettingsLayout.defaultContentSize
-        )
+        let preconfigurationContentSize = CGSize(width: 880, height: 690)
+        hostingView.frame = CGRect(origin: .zero, size: preconfigurationContentSize)
+        expect(hostingView.frame.size != SettingsLayout.defaultContentSize)
         let window = NSWindow(
             contentRect: hostingView.frame,
             styleMask: [.titled, .closable, .resizable],
@@ -139,15 +195,11 @@ enum SettingsVisualCheck {
         window.layoutIfNeeded()
         hostingView.layoutSubtreeIfNeeded()
         RunLoop.main.run(until: Date().addingTimeInterval(0.5))
-        window.setContentSize(size)
-        window.layoutIfNeeded()
-        hostingView.layoutSubtreeIfNeeded()
-        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
 
         let splitViews = descendants(of: hostingView).compactMap { $0 as? NSSplitView }
         expect(splitViews.isEmpty)
         expect(window.contentMinSize == SettingsLayout.minimumContentSize)
-        expect(window.contentView?.bounds.size == size)
+        expect(window.contentView?.bounds.size == SettingsLayout.defaultContentSize)
         expect(window.styleMask.contains(.fullSizeContentView))
         expect(window.titleVisibility == .hidden)
         expect(window.titlebarAppearsTransparent)
@@ -161,8 +213,10 @@ enum SettingsVisualCheck {
             expect(labels.values.contains("菜单面板外观预览"))
         }
 
-        // SwiftUI can restore its standard title bar after the settings
-        // window becomes key. The Apple Music-style treatment must persist.
+        // The first configuration owns only the initial default. A later user
+        // resize must survive activation and resize-driven reconfiguration.
+        let userResizedContentSize = SettingsLayout.minimumContentSize
+        window.setContentSize(userResizedContentSize)
         window.titleVisibility = .visible
         window.titlebarAppearsTransparent = false
         NotificationCenter.default.post(
@@ -175,6 +229,7 @@ enum SettingsVisualCheck {
             fatalError("Settings title bar configuration must survive window activation")
         }
         expect(window.contentMinSize == SettingsLayout.minimumContentSize)
+        expect(window.contentView?.bounds.size == userResizedContentSize)
 
         window.contentMinSize = .zero
         NotificationCenter.default.post(
@@ -183,7 +238,17 @@ enum SettingsVisualCheck {
         )
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         expect(window.contentMinSize == SettingsLayout.minimumContentSize)
+        expect(window.contentView?.bounds.size == userResizedContentSize)
 
+        window.setContentSize(size)
+        window.layoutIfNeeded()
+        hostingView.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        expect(window.contentView?.bounds.size == size)
+
+        // This PNG intentionally caches only SwiftUI content. Actual traffic
+        // lights, titlebar composition, and backdrop-dependent sidebar glass
+        // remain a manual gate in the installed Settings Scene.
         guard let bitmap = hostingView.bitmapImageRepForCachingDisplay(
             in: hostingView.bounds
         ) else {
@@ -226,4 +291,9 @@ private final class AccessibilityIdentifierStore {
 @MainActor
 private final class AccessibilityLabelStore {
     var values: Set<String> = []
+}
+
+@MainActor
+private final class SidebarSelectionStore {
+    var value: SettingsPage = .appearance
 }

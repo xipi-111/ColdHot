@@ -9,6 +9,7 @@ enum PanelLayoutBehaviorCheck {
         checkPanelScrollBehavior()
         checkExpansionDecision()
         checkExpansionAnimationOrder()
+        checkProgrammaticPresentation()
         print("Panel layout behavior checks passed")
     }
 
@@ -123,6 +124,16 @@ enum PanelLayoutBehaviorCheck {
         expect(reducedMotion.finalDetailsAnimationDuration == 0)
         expect(reducedMotion.scrollDelay == 0)
         expect(reducedMotion.scrollAnimationDuration == 0)
+    }
+
+    private static func checkProgrammaticPresentation() {
+        let cpuScreenshot = PanelPresentationState<String>(visibleDetailsMetric: "cpu")
+        expect(cpuScreenshot.visibleDetailsMetric == "cpu")
+        expect(cpuScreenshot.showsExpandedContent(for: "cpu", expandedMetric: "cpu"))
+        expect(!cpuScreenshot.showsExpandedContent(for: "memory", expandedMetric: "cpu"))
+
+        let collapsed = PanelPresentationState<String>()
+        expect(!collapsed.showsExpandedContent(for: "cpu", expandedMetric: "cpu"))
     }
 
     private static func expect(

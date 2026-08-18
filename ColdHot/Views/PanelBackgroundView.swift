@@ -101,6 +101,18 @@ enum PanelScrollBehavior {
     }
 }
 
+struct PanelPresentationState<Metric: Equatable> {
+    var visibleDetailsMetric: Metric?
+
+    init(visibleDetailsMetric: Metric? = nil) {
+        self.visibleDetailsMetric = visibleDetailsMetric
+    }
+
+    func showsExpandedContent(for metric: Metric, expandedMetric: Metric?) -> Bool {
+        expandedMetric == metric && visibleDetailsMetric == metric
+    }
+}
+
 struct PanelExpansionDecision<Metric: Equatable> {
     let expandedMetric: Metric?
     let scrollTarget: Metric?

@@ -231,7 +231,8 @@ struct ScreenshotCanvas: View {
                     settings: settings,
                     dockController: dockController,
                     panelBackgroundStore: panelBackgroundStore,
-                    updateController: updateController
+                    updateController: updateController,
+                    initialVisibleDetailsMetric: shot.expandedMetric
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .overlay {
