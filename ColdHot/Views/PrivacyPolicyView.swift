@@ -18,7 +18,7 @@ struct PrivacyPolicyView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("最后更新：2026 年 8 月 12 日")
+                    Text("最后更新：2026 年 8 月 18 日")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
@@ -32,7 +32,7 @@ struct PrivacyPolicyView: View {
                     )
                     policySection(
                         "本地设置",
-                        "指标选择、刷新间隔和界面偏好保存在应用自己的本地偏好中。删除应用数据即可移除这些设置。"
+                        "指标选择、刷新间隔和界面偏好保存在应用自己的本地偏好中。用户主动选择菜单面板背景时，ColdHot 会移除图片原始元数据，把降采样副本保存在应用的本地 Application Support 目录；图片不会上传，也不会用于其他目的。删除应用数据即可移除这些设置和背景副本。"
                     )
                     policySection(
                         "版本差异",

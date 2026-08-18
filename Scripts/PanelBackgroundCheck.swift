@@ -70,6 +70,17 @@ enum PanelBackgroundCheck {
         let storedPixelSize = try pixelSize(of: store.fileURL)
         expect(storedPixelSize == CGSize(width: 1_600, height: 800))
 
+        let smallSourceURL = rootDirectory.appendingPathComponent("small-source.png")
+        try writeTestPNG(
+            to: smallSourceURL,
+            width: 320,
+            height: 200,
+            color: .systemBlue
+        )
+        try store.importImage(from: smallSourceURL)
+        let smallStoredPixelSize = try pixelSize(of: store.fileURL)
+        expect(smallStoredPixelSize == CGSize(width: 320, height: 200))
+
         let storedBeforeInvalidImport = try Data(contentsOf: store.fileURL)
         let invalidURL = rootDirectory.appendingPathComponent("invalid.txt")
         try Data("not an image".utf8).write(to: invalidURL)
@@ -84,6 +95,11 @@ enum PanelBackgroundCheck {
         let restored = PanelBackgroundStore(directoryURL: storeDirectory)
         expect(restored.hasImage)
         expect(restored.image != nil)
+
+        try fileManager.removeItem(at: restored.fileURL)
+        expect(restored.hasImage)
+        let missingFileStore = PanelBackgroundStore(directoryURL: storeDirectory)
+        expect(!missingFileStore.hasImage)
 
         try restored.removeImage()
         expect(!restored.hasImage)
