@@ -1,8 +1,8 @@
 import SwiftUI
 import AppKit
-import QuartzCore
 
 struct DashboardView: View {
+    @Environment(\.openSettings) private var openSettings
     @ObservedObject var monitor: PerformanceMonitor
     @ObservedObject var settings: MonitorSettings
     @ObservedObject var dockController: DockDelayController
@@ -103,7 +103,7 @@ struct DashboardView: View {
             Text("在设置中勾选希望显示的性能指标。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            SettingsLink { Text("打开设置") }
+            Button("打开设置", action: openSettingsAndFocus)
                 .buttonStyle(.borderedProminent)
         }
         .frame(maxWidth: .infinity)
@@ -153,8 +153,10 @@ struct DashboardView: View {
 
     private var footer: some View {
         HStack {
-            SettingsLink { Label("设置", systemImage: "gearshape") }
-                .buttonStyle(.plain)
+            Button(action: openSettingsAndFocus) {
+                Label("设置", systemImage: "gearshape")
+            }
+            .buttonStyle(.plain)
             Spacer()
             if BuildVariant.supportsFanReadings {
                 fanStatus
@@ -170,6 +172,30 @@ struct DashboardView: View {
         .font(.caption)
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
+    }
+
+    private func openSettingsAndFocus() {
+        openSettings()
+        focusSettingsWindow(attempt: 0)
+    }
+
+    private func focusSettingsWindow(attempt: Int) {
+        NSApplication.shared.activate(ignoringOtherApps: true)
+
+        if let settingsWindow = NSApplication.shared.windows.first(where: {
+            $0.isVisible
+                && $0.canBecomeKey
+                && !($0 is NSPanel)
+                && $0.styleMask.contains(.titled)
+        }) {
+            settingsWindow.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        guard attempt < 10 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            focusSettingsWindow(attempt: attempt + 1)
+        }
     }
 
     @ViewBuilder
@@ -674,92 +700,5 @@ struct DashboardView: View {
         case .critical: .red
         @unknown default: .secondary
         }
-    }
-}
-
-private struct SpinningFanIcon: NSViewRepresentable {
-    let rpm: Double
-
-    func makeNSView(context: Context) -> FanSpinnerView {
-        FanSpinnerView()
-    }
-
-    func updateNSView(_ view: FanSpinnerView, context: Context) {
-        view.setSpeed(rpm)
-    }
-
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: FanSpinnerView, context: Context) -> CGSize? {
-        CGSize(width: 12, height: 12)
-    }
-}
-
-private final class FanSpinnerView: NSView {
-    private let fanImageView = NSImageView(frame: .zero)
-    private var shouldSpin = false
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        fanImageView.image = NSImage(
-            systemSymbolName: "fan.fill",
-            accessibilityDescription: nil
-        )?.withSymbolConfiguration(.init(pointSize: 11, weight: .regular))
-        fanImageView.imageScaling = .scaleProportionallyUpOrDown
-        fanImageView.contentTintColor = .secondaryLabelColor
-        fanImageView.wantsLayer = true
-        fanImageView.layer?.masksToBounds = false
-        addSubview(fanImageView)
-        setAccessibilityElement(false)
-    }
-
-    required init?(coder: NSCoder) {
-        nil
-    }
-
-    override func layout() {
-        super.layout()
-
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        fanImageView.frame = bounds
-        fanImageView.layer?.anchorPoint = CGPoint(x: 0.5, y: 0.5)
-        fanImageView.layer?.position = CGPoint(x: bounds.midX, y: bounds.midY)
-        CATransaction.commit()
-
-        updateAnimation()
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        updateAnimation()
-    }
-
-    func setSpeed(_ rpm: Double) {
-        let newValue = rpm > 0 && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        guard newValue != shouldSpin else { return }
-        shouldSpin = newValue
-        updateAnimation()
-    }
-
-    private func updateAnimation() {
-        let animationKey = "coldhot.fan.rotation"
-        let isAnimating = fanImageView.layer?.animation(forKey: animationKey) != nil
-        let hasFinalLayout = window != nil && bounds.width > 0 && bounds.height > 0
-
-        guard shouldSpin && hasFinalLayout else {
-            if isAnimating {
-                fanImageView.layer?.removeAnimation(forKey: animationKey)
-            }
-            return
-        }
-        guard !isAnimating else { return }
-
-        let animation = CABasicAnimation(keyPath: "transform.rotation.z")
-        animation.fromValue = 0
-        animation.toValue = Double.pi * 2
-        animation.duration = 1.35
-        animation.timingFunction = CAMediaTimingFunction(name: .linear)
-        animation.repeatCount = .infinity
-        animation.isRemovedOnCompletion = false
-        fanImageView.layer?.add(animation, forKey: animationKey)
     }
 }
