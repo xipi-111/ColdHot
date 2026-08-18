@@ -11,6 +11,88 @@ enum SettingsLayout {
     static let rowHeight: CGFloat = 40
 }
 
+enum SettingsPreviewScale {
+    static func factor(contentWidth: CGFloat, availableWidth: CGFloat) -> CGFloat {
+        guard contentWidth > 0 else { return 1 }
+        return min(1, max(0, availableWidth / contentWidth))
+    }
+}
+
+private struct SettingsPreviewLogicalSizeKey: PreferenceKey {
+    static let defaultValue = CGSize.zero
+
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        let nextSize = nextValue()
+        if nextSize != .zero {
+            value = nextSize
+        }
+    }
+}
+
+private struct SettingsPreviewAvailableWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+struct ScaledSettingsPreview<Content: View>: View {
+    @State private var logicalSize = CGSize.zero
+    @State private var availableWidth: CGFloat = 0
+    private let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    private var scale: CGFloat {
+        SettingsPreviewScale.factor(
+            contentWidth: logicalSize.width,
+            availableWidth: availableWidth
+        )
+    }
+
+    private var presentedSize: CGSize {
+        CGSize(width: logicalSize.width * scale, height: logicalSize.height * scale)
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .topLeading) {
+                Color.clear.preference(
+                    key: SettingsPreviewAvailableWidthKey.self,
+                    value: proxy.size.width
+                )
+
+                content
+                    .fixedSize()
+                    .background {
+                        GeometryReader { contentProxy in
+                            Color.clear.preference(
+                                key: SettingsPreviewLogicalSizeKey.self,
+                                value: contentProxy.size
+                            )
+                        }
+                    }
+                    .scaleEffect(scale, anchor: .topLeading)
+                    .frame(
+                        width: logicalSize == .zero ? nil : presentedSize.width,
+                        height: logicalSize == .zero ? nil : presentedSize.height,
+                        alignment: .topLeading
+                    )
+            }
+        }
+        .frame(
+            maxWidth: logicalSize.width > 0 ? logicalSize.width : .infinity,
+            alignment: .leading
+        )
+        .frame(height: logicalSize == .zero ? nil : presentedSize.height)
+        .onPreferenceChange(SettingsPreviewLogicalSizeKey.self) { logicalSize = $0 }
+        .onPreferenceChange(SettingsPreviewAvailableWidthKey.self) { availableWidth = $0 }
+    }
+}
+
 enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
     case appearance = "外观"
     case metrics = "指标"
@@ -47,16 +129,29 @@ private struct SettingsAccessibilityIdentifierReporterKey: EnvironmentKey {
     static let defaultValue: ((String) -> Void)? = nil
 }
 
+private struct SettingsAccessibilityLabelReporterKey: EnvironmentKey {
+    static let defaultValue: ((String) -> Void)? = nil
+}
+
 extension EnvironmentValues {
     var settingsAccessibilityIdentifierReporter: ((String) -> Void)? {
         get { self[SettingsAccessibilityIdentifierReporterKey.self] }
         set { self[SettingsAccessibilityIdentifierReporterKey.self] = newValue }
+    }
+
+    var settingsAccessibilityLabelReporter: ((String) -> Void)? {
+        get { self[SettingsAccessibilityLabelReporterKey.self] }
+        set { self[SettingsAccessibilityLabelReporterKey.self] = newValue }
     }
 }
 
 extension View {
     func settingsAccessibilityIdentifier(_ identifier: String) -> some View {
         modifier(SettingsAccessibilityIdentifierModifier(identifier: identifier))
+    }
+
+    func settingsAccessibilityLabel(_ label: String) -> some View {
+        modifier(SettingsAccessibilityLabelModifier(label: label))
     }
 }
 
@@ -68,6 +163,17 @@ private struct SettingsAccessibilityIdentifierModifier: ViewModifier {
         content
             .accessibilityIdentifier(identifier)
             .onAppear { reporter?(identifier) }
+    }
+}
+
+private struct SettingsAccessibilityLabelModifier: ViewModifier {
+    let label: String
+    @Environment(\.settingsAccessibilityLabelReporter) private var reporter
+
+    func body(content: Content) -> some View {
+        content
+            .accessibilityLabel(Text(label))
+            .onAppear { reporter?(label) }
     }
 }
 

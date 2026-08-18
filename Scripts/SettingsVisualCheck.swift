@@ -26,6 +26,10 @@ enum SettingsVisualCheck {
         expect(SettingsLayout.defaultContentSize == CGSize(width: 920, height: 720))
         expect(SettingsLayout.minimumContentSize == CGSize(width: 860, height: 680))
         expect(SettingsLayout.sidebarWidth == 204)
+        expect(PanelLayout.width == 370)
+        expect(SettingsPreviewScale.factor(contentWidth: 370, availableWidth: 370) == 1)
+        expect(abs(SettingsPreviewScale.factor(contentWidth: 370, availableWidth: 296) - 0.8) < 0.0001)
+        expect(SettingsPreviewScale.factor(contentWidth: 370, availableWidth: 500) == 1)
         expect(SettingsPage.allCases.map(\.rawValue) == [
             "外观", "指标", "阈值提醒", "通用", "关于"
         ])
@@ -64,22 +68,32 @@ enum SettingsVisualCheck {
         ]
         for appearance in appearances {
             for page in SettingsPage.allCases {
-                let view = SettingsView(
-                    settings: settings,
-                    panelBackgroundStore: backgroundStore,
-                    monitor: monitor,
-                    updateController: UpdateController(),
-                    initialPage: page
-                )
-                let outputPath = outputDirectory
-                    + "/\(appearance.slug)-\(page.slug).png"
-                try render(
-                    view,
-                    page: page,
-                    appearance: appearance.name,
-                    outputPath: outputPath
-                )
-                print(outputPath)
+                let sizes: [(slug: String?, value: CGSize)] = page == .appearance
+                    ? [
+                        ("920x720", SettingsLayout.defaultContentSize),
+                        ("860x680", SettingsLayout.minimumContentSize)
+                    ]
+                    : [(nil, SettingsLayout.defaultContentSize)]
+                for size in sizes {
+                    let view = SettingsView(
+                        settings: settings,
+                        panelBackgroundStore: backgroundStore,
+                        monitor: monitor,
+                        updateController: UpdateController(),
+                        initialPage: page
+                    )
+                    let sizeSuffix = size.slug.map { "-\($0)" } ?? ""
+                    let outputPath = outputDirectory
+                        + "/\(appearance.slug)-\(page.slug)\(sizeSuffix).png"
+                    try render(
+                        view,
+                        page: page,
+                        appearance: appearance.name,
+                        size: size.value,
+                        outputPath: outputPath
+                    )
+                    print(outputPath)
+                }
             }
         }
         if ProcessInfo.processInfo.environment["COLDHOT_SETTINGS_VISUAL_HOLD"] == "1" {
@@ -92,17 +106,27 @@ enum SettingsVisualCheck {
         _ view: SettingsView,
         page: SettingsPage,
         appearance: NSAppearance.Name,
+        size: CGSize,
         outputPath: String
     ) throws {
         let identifiers = AccessibilityIdentifierStore()
+        let labels = AccessibilityLabelStore()
         let hostingView = NSHostingView(
-            rootView: view.environment(
-                \.settingsAccessibilityIdentifierReporter,
-                { identifiers.values.insert($0) }
-            )
+            rootView: view
+                .environment(
+                    \.settingsAccessibilityIdentifierReporter,
+                    { identifiers.values.insert($0) }
+                )
+                .environment(
+                    \.settingsAccessibilityLabelReporter,
+                    { labels.values.insert($0) }
+                )
         )
         hostingView.appearance = NSAppearance(named: appearance)
-        hostingView.frame = CGRect(origin: .zero, size: SettingsLayout.defaultContentSize)
+        hostingView.frame = CGRect(
+            origin: .zero,
+            size: SettingsLayout.defaultContentSize
+        )
         let window = NSWindow(
             contentRect: hostingView.frame,
             styleMask: [.titled, .closable, .resizable],
@@ -115,11 +139,15 @@ enum SettingsVisualCheck {
         window.layoutIfNeeded()
         hostingView.layoutSubtreeIfNeeded()
         RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        window.setContentSize(size)
+        window.layoutIfNeeded()
+        hostingView.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
 
         let splitViews = descendants(of: hostingView).compactMap { $0 as? NSSplitView }
         expect(splitViews.isEmpty)
         expect(window.contentMinSize == SettingsLayout.minimumContentSize)
-        expect(window.contentView?.bounds.size == SettingsLayout.defaultContentSize)
+        expect(window.contentView?.bounds.size == size)
         expect(window.styleMask.contains(.fullSizeContentView))
         expect(window.titleVisibility == .hidden)
         expect(window.titlebarAppearsTransparent)
@@ -129,6 +157,9 @@ enum SettingsVisualCheck {
         expect(identifiers.values.contains("settings-sidebar"))
         expect(identifiers.values.contains("settings-page-\(page.slug)"))
         expect(identifiers.values.contains(firstSectionIdentifier(for: page)))
+        if page == .appearance {
+            expect(labels.values.contains("菜单面板外观预览"))
+        }
 
         // SwiftUI can restore its standard title bar after the settings
         // window becomes key. The Apple Music-style treatment must persist.
@@ -189,5 +220,10 @@ enum SettingsVisualCheck {
 
 @MainActor
 private final class AccessibilityIdentifierStore {
+    var values: Set<String> = []
+}
+
+@MainActor
+private final class AccessibilityLabelStore {
     var values: Set<String> = []
 }

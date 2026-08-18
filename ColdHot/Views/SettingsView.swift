@@ -91,7 +91,7 @@ struct SettingsView: View {
 
     private var appearancePage: some View {
         SettingsPageContent(page: .appearance) {
-            HStack(alignment: .top, spacing: 0) {
+            HStack(alignment: .top, spacing: 24) {
                 VStack(alignment: .leading, spacing: SettingsLayout.sectionSpacing) {
                     SettingsSectionSurface(
                         "面板背景与可读性",
@@ -121,24 +121,25 @@ struct SettingsView: View {
                         }
                     }
                 }
-                .frame(minWidth: 390)
-
-                Divider()
+                .frame(minWidth: 268, maxWidth: .infinity, alignment: .topLeading)
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("菜单面板真实范围")
                         .font(.headline)
-                    PanelAppearancePreview(
-                        image: panelBackgroundStore.image,
-                        isBackgroundEnabled: settings.isPanelBackgroundEnabled,
-                        dimOpacity: settings.panelBackgroundDimOpacity,
-                        cardOpacity: settings.panelCardOpacity,
-                        primaryTextOpacity: settings.panelPrimaryTextOpacity,
-                        secondaryTextOpacity: settings.panelSecondaryTextOpacity,
-                        progressOpacity: settings.panelProgressOpacity,
-                        enabledMetrics: previewEnabledMetrics,
-                        showsDockQuickControl: settings.showDockQuickControl
-                    )
+                    ScaledSettingsPreview {
+                        PanelAppearancePreview(
+                            image: panelBackgroundStore.image,
+                            isBackgroundEnabled: settings.isPanelBackgroundEnabled,
+                            dimOpacity: settings.panelBackgroundDimOpacity,
+                            cardOpacity: settings.panelCardOpacity,
+                            primaryTextOpacity: settings.panelPrimaryTextOpacity,
+                            secondaryTextOpacity: settings.panelSecondaryTextOpacity,
+                            progressOpacity: settings.panelProgressOpacity,
+                            enabledMetrics: previewEnabledMetrics,
+                            showsDockQuickControl: settings.showDockQuickControl
+                        )
+                        .settingsAccessibilityLabel("菜单面板外观预览")
+                    }
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                     .overlay {
                         RoundedRectangle(cornerRadius: 12)
@@ -148,9 +149,13 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                .frame(width: 390, alignment: .topLeading)
-                .padding(12)
-                .frame(maxHeight: .infinity, alignment: .top)
+                .frame(
+                    minWidth: 296,
+                    idealWidth: 320,
+                    maxWidth: 320,
+                    alignment: .topLeading
+                )
+                .layoutPriority(1)
             }
         }
     }
