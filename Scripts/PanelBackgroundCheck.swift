@@ -11,6 +11,7 @@ enum PanelBackgroundCheck {
         checkSettingsPersistence()
         try checkImageLifecycle()
         checkBackgroundRendering()
+        checkReadabilityRendering()
         print("Panel background checks passed")
     }
 
@@ -25,20 +26,32 @@ enum PanelBackgroundCheck {
         let initial = MonitorSettings(defaults: defaults)
         expect(!initial.isPanelBackgroundEnabled)
         expect(initial.panelBackgroundDimOpacity == 0.35)
+        expect(initial.panelCardOpacity == 1)
+        expect(initial.panelTextOpacity == 1)
 
         initial.setPanelBackgroundEnabled(true)
         initial.setPanelBackgroundDimOpacity(1)
+        initial.setPanelCardOpacity(2)
+        initial.setPanelTextOpacity(2)
 
         let restored = MonitorSettings(defaults: defaults)
         expect(restored.isPanelBackgroundEnabled)
         expect(restored.panelBackgroundDimOpacity == 0.70)
+        expect(restored.panelCardOpacity == 1)
+        expect(restored.panelTextOpacity == 1)
 
         restored.setPanelBackgroundDimOpacity(-1)
+        restored.setPanelCardOpacity(0)
+        restored.setPanelTextOpacity(0)
         expect(restored.panelBackgroundDimOpacity == 0)
+        expect(restored.panelCardOpacity == 0.10)
+        expect(restored.panelTextOpacity == 0.50)
 
         restored.reset()
         expect(!restored.isPanelBackgroundEnabled)
         expect(restored.panelBackgroundDimOpacity == 0.35)
+        expect(restored.panelCardOpacity == 1)
+        expect(restored.panelTextOpacity == 1)
     }
 
     @MainActor
@@ -168,6 +181,104 @@ enum PanelBackgroundCheck {
     }
 
     @MainActor
+    private static func checkReadabilityRendering() {
+        let opaqueCard = renderCardCenterPixel(
+            cardOpacity: 1,
+            usesCustomBackground: true
+        )
+        let translucentCard = renderCardCenterPixel(
+            cardOpacity: 0.10,
+            usesCustomBackground: true
+        )
+        let nativeCard = renderCardCenterPixel(
+            cardOpacity: 0.10,
+            usesCustomBackground: false
+        )
+
+        expect(translucentCard.redComponent > opaqueCard.redComponent)
+        expect(abs(nativeCard.redComponent - opaqueCard.redComponent) < 0.05)
+
+        let fullText = renderTextCenterPixel(
+            textOpacity: 1,
+            usesCustomBackground: true
+        )
+        let dimmedText = renderTextCenterPixel(
+            textOpacity: 0.50,
+            usesCustomBackground: true
+        )
+        let nativeText = renderTextCenterPixel(
+            textOpacity: 0.50,
+            usesCustomBackground: false
+        )
+
+        expect(brightness(of: fullText) > 0.90)
+        expect(brightness(of: dimmedText) < brightness(of: fullText) * 0.75)
+        expect(brightness(of: nativeText) > 0.90)
+    }
+
+    @MainActor
+    private static func renderCardCenterPixel(
+        cardOpacity: Double,
+        usesCustomBackground: Bool
+    ) -> NSColor {
+        let content = ZStack {
+            Color.red
+            PanelCardBackground(cornerRadius: 0)
+        }
+        .panelReadability(
+            cardOpacity: cardOpacity,
+            textOpacity: 1,
+            usesCustomBackground: usesCustomBackground
+        )
+        return renderCenterPixel(content)
+    }
+
+    @MainActor
+    private static func renderTextCenterPixel(
+        textOpacity: Double,
+        usesCustomBackground: Bool
+    ) -> NSColor {
+        let content = ZStack {
+            Color.black
+            Color.white
+                .frame(width: 60, height: 60)
+                .panelTextReadability()
+        }
+        .panelReadability(
+            cardOpacity: 1,
+            textOpacity: textOpacity,
+            usesCustomBackground: usesCustomBackground
+        )
+        return renderCenterPixel(content)
+    }
+
+    @MainActor
+    private static func renderCenterPixel<Content: View>(
+        _ content: Content
+    ) -> NSColor {
+        let side: CGFloat = 100
+        let hostingView = NSHostingView(
+            rootView: content.frame(width: side, height: side)
+        )
+        hostingView.frame = CGRect(x: 0, y: 0, width: side, height: side)
+        hostingView.layoutSubtreeIfNeeded()
+
+        guard let bitmap = hostingView.bitmapImageRepForCachingDisplay(
+            in: hostingView.bounds
+        ) else {
+            fatalError("Unable to create readability render bitmap")
+        }
+        hostingView.cacheDisplay(in: hostingView.bounds, to: bitmap)
+        guard let color = bitmap.colorAt(
+            x: bitmap.pixelsWide / 2,
+            y: bitmap.pixelsHigh / 2
+        )?.usingColorSpace(.deviceRGB) else {
+            fatalError("Unable to sample readability render")
+        }
+        return color
+    }
+
+    @MainActor
     private static func renderCenterPixel(
         image: NSImage,
         dimOpacity: Double
@@ -226,6 +337,13 @@ enum PanelBackgroundCheck {
             cgImage: image,
             size: NSSize(width: width, height: height)
         )
+    }
+
+    private static func brightness(of color: NSColor) -> CGFloat {
+        guard let rgb = color.usingColorSpace(.sRGB) else {
+            fatalError("Unable to convert sampled color to sRGB")
+        }
+        return max(rgb.redComponent, rgb.greenComponent, rgb.blueComponent)
     }
 
     private static func expect(

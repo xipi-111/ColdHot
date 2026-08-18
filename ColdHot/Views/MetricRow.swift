@@ -35,10 +35,12 @@ struct MetricCard<ExpandedContent: View>: View {
                             Text(metric.title)
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(.secondary)
+                                .panelTextReadability()
                             Spacer()
                             Text(value)
                                 .font(.system(size: 14, weight: .semibold, design: .rounded))
                                 .monospacedDigit()
+                                .panelTextReadability()
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 9, weight: .bold))
                                 .foregroundStyle(.tertiary)
@@ -56,6 +58,7 @@ struct MetricCard<ExpandedContent: View>: View {
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
                             .lineLimit(1)
+                            .panelTextReadability()
                     }
                 }
                 .contentShape(Rectangle())
@@ -76,7 +79,9 @@ struct MetricCard<ExpandedContent: View>: View {
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .background {
+            PanelCardBackground(cornerRadius: 12)
+        }
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 }
@@ -91,6 +96,7 @@ struct DetailSection<Content: View>: View {
             Text(title)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(titleTint)
+                .panelTextReadability()
             content()
         }
     }
@@ -106,12 +112,14 @@ struct DetailValueRow: View {
             Text(label)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .panelTextReadability()
             Spacer()
             Text(value)
                 .font(.system(size: 12, weight: .medium, design: .rounded))
                 .foregroundStyle(tint)
                 .monospacedDigit()
                 .multilineTextAlignment(.trailing)
+                .panelTextReadability()
         }
     }
 }
@@ -127,19 +135,23 @@ struct ProcessActivityList: View {
                 Text("正在建立采样基线…")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
+                    .panelTextReadability()
             } else {
                 ForEach(processes) { process in
                     HStack(spacing: 6) {
                         Text(process.name)
                             .font(.system(size: 11))
                             .lineLimit(1)
+                            .panelTextReadability()
                         Text("PID \(process.pid)")
                             .font(.system(size: 9))
                             .foregroundStyle(.tertiary)
+                            .panelTextReadability()
                         Spacer()
                         Text(value(process))
                             .font(.system(size: 11, weight: .semibold, design: .rounded))
                             .monospacedDigit()
+                            .panelTextReadability()
                     }
                 }
             }

@@ -162,6 +162,38 @@ struct SettingsView: View {
                 .accessibilityLabel("深色遮罩强度")
             }
 
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("卡片不透明度")
+                    Spacer()
+                    Text("\(Int((settings.panelCardOpacity * 100).rounded()))%")
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+                Slider(
+                    value: panelCardOpacityBinding,
+                    in: 0.10...1,
+                    step: 0.05
+                )
+                .accessibilityLabel("卡片不透明度")
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("文字亮度")
+                    Spacer()
+                    Text("\(Int((settings.panelTextOpacity * 100).rounded()))%")
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+                Slider(
+                    value: panelTextOpacityBinding,
+                    in: 0.50...1,
+                    step: 0.05
+                )
+                .accessibilityLabel("面板文字亮度")
+            }
+
             HStack {
                 Spacer()
                 Button("移除背景", role: .destructive) {
@@ -204,6 +236,20 @@ struct SettingsView: View {
         Binding(
             get: { settings.panelBackgroundDimOpacity },
             set: settings.setPanelBackgroundDimOpacity
+        )
+    }
+
+    private var panelCardOpacityBinding: Binding<Double> {
+        Binding(
+            get: { settings.panelCardOpacity },
+            set: settings.setPanelCardOpacity
+        )
+    }
+
+    private var panelTextOpacityBinding: Binding<Double> {
+        Binding(
+            get: { settings.panelTextOpacity },
+            set: settings.setPanelTextOpacity
         )
     }
 

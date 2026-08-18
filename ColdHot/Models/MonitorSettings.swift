@@ -6,6 +6,8 @@ final class MonitorSettings: ObservableObject {
         .cpu, .gpu, .memory, .network, .thermal
     ]
     static let defaultPanelBackgroundDimOpacity = 0.35
+    static let defaultPanelCardOpacity = 1.0
+    static let defaultPanelTextOpacity = 1.0
 
     @Published private(set) var enabledMetrics: Set<MetricKind> {
         didSet { persistMetrics() }
@@ -26,6 +28,10 @@ final class MonitorSettings: ObservableObject {
     @Published private(set) var isPanelBackgroundEnabled: Bool
 
     @Published private(set) var panelBackgroundDimOpacity: Double
+
+    @Published private(set) var panelCardOpacity: Double
+
+    @Published private(set) var panelTextOpacity: Double
 
     @Published private(set) var thresholdRules: [ThresholdMetric: ThresholdRule] {
         didSet { persistThresholdRules() }
@@ -68,6 +74,24 @@ final class MonitorSettings: ObservableObject {
                 : Self.defaultPanelBackgroundDimOpacity
         } else {
             panelBackgroundDimOpacity = Self.defaultPanelBackgroundDimOpacity
+        }
+
+        if defaults.object(forKey: Keys.panelCardOpacity) != nil {
+            let storedOpacity = defaults.double(forKey: Keys.panelCardOpacity)
+            panelCardOpacity = storedOpacity.isFinite
+                ? min(max(storedOpacity, 0.10), 1)
+                : Self.defaultPanelCardOpacity
+        } else {
+            panelCardOpacity = Self.defaultPanelCardOpacity
+        }
+
+        if defaults.object(forKey: Keys.panelTextOpacity) != nil {
+            let storedOpacity = defaults.double(forKey: Keys.panelTextOpacity)
+            panelTextOpacity = storedOpacity.isFinite
+                ? min(max(storedOpacity, 0.50), 1)
+                : Self.defaultPanelTextOpacity
+        } else {
+            panelTextOpacity = Self.defaultPanelTextOpacity
         }
 
         let defaultRules = Dictionary(uniqueKeysWithValues: ThresholdMetric.allCases.map {
@@ -151,6 +175,20 @@ final class MonitorSettings: ObservableObject {
         defaults.set(clamped, forKey: Keys.panelBackgroundDimOpacity)
     }
 
+    func setPanelCardOpacity(_ opacity: Double) {
+        guard opacity.isFinite else { return }
+        let clamped = min(max(opacity, 0.10), 1)
+        panelCardOpacity = clamped
+        defaults.set(clamped, forKey: Keys.panelCardOpacity)
+    }
+
+    func setPanelTextOpacity(_ opacity: Double) {
+        guard opacity.isFinite else { return }
+        let clamped = min(max(opacity, 0.50), 1)
+        panelTextOpacity = clamped
+        defaults.set(clamped, forKey: Keys.panelTextOpacity)
+    }
+
     func reset() {
         enabledMetrics = Self.defaultMetrics.intersection(BuildVariant.availableMetrics)
         enabledDetails = MetricDetail.defaults
@@ -158,6 +196,8 @@ final class MonitorSettings: ObservableObject {
         showDockQuickControl = true
         setPanelBackgroundEnabled(false)
         setPanelBackgroundDimOpacity(Self.defaultPanelBackgroundDimOpacity)
+        setPanelCardOpacity(Self.defaultPanelCardOpacity)
+        setPanelTextOpacity(Self.defaultPanelTextOpacity)
         thresholdRules = Dictionary(uniqueKeysWithValues: ThresholdMetric.allCases.map {
             ($0, ThresholdRule.defaultRule(for: $0))
         })
@@ -185,6 +225,8 @@ final class MonitorSettings: ObservableObject {
         static let showDockQuickControl = "showDockQuickControl"
         static let isPanelBackgroundEnabled = "isPanelBackgroundEnabled"
         static let panelBackgroundDimOpacity = "panelBackgroundDimOpacity"
+        static let panelCardOpacity = "panelCardOpacity"
+        static let panelTextOpacity = "panelTextOpacity"
         static let thresholdRules = "thresholdRules"
     }
 }
