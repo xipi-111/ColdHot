@@ -12,6 +12,13 @@ enum PanelBackgroundCheck {
         try checkImageLifecycle()
         checkBackgroundRendering()
         checkReadabilityRendering()
+        checkPanelPreviewRendering()
+        if CommandLine.arguments.count == 3 {
+            try writePreviewSnapshot(
+                backgroundPath: CommandLine.arguments[1],
+                outputPath: CommandLine.arguments[2]
+            )
+        }
         print("Panel background checks passed")
     }
 
@@ -27,31 +34,56 @@ enum PanelBackgroundCheck {
         expect(!initial.isPanelBackgroundEnabled)
         expect(initial.panelBackgroundDimOpacity == 0.35)
         expect(initial.panelCardOpacity == 1)
-        expect(initial.panelTextOpacity == 1)
+        expect(initial.panelPrimaryTextOpacity == 1)
+        expect(initial.panelSecondaryTextOpacity == 1)
+        expect(initial.panelProgressOpacity == 1)
 
         initial.setPanelBackgroundEnabled(true)
         initial.setPanelBackgroundDimOpacity(1)
         initial.setPanelCardOpacity(2)
-        initial.setPanelTextOpacity(2)
+        initial.setPanelPrimaryTextOpacity(2)
+        initial.setPanelSecondaryTextOpacity(2)
+        initial.setPanelProgressOpacity(2)
 
         let restored = MonitorSettings(defaults: defaults)
         expect(restored.isPanelBackgroundEnabled)
         expect(restored.panelBackgroundDimOpacity == 0.70)
         expect(restored.panelCardOpacity == 1)
-        expect(restored.panelTextOpacity == 1)
+        expect(restored.panelPrimaryTextOpacity == 1)
+        expect(restored.panelSecondaryTextOpacity == 1)
+        expect(restored.panelProgressOpacity == 1)
 
         restored.setPanelBackgroundDimOpacity(-1)
         restored.setPanelCardOpacity(0)
-        restored.setPanelTextOpacity(0)
+        restored.setPanelPrimaryTextOpacity(0)
+        restored.setPanelSecondaryTextOpacity(0)
+        restored.setPanelProgressOpacity(0)
         expect(restored.panelBackgroundDimOpacity == 0)
         expect(restored.panelCardOpacity == 0.10)
-        expect(restored.panelTextOpacity == 0.50)
+        expect(restored.panelPrimaryTextOpacity == 0.50)
+        expect(restored.panelSecondaryTextOpacity == 0.50)
+        expect(restored.panelProgressOpacity == 0.50)
 
         restored.reset()
         expect(!restored.isPanelBackgroundEnabled)
         expect(restored.panelBackgroundDimOpacity == 0.35)
         expect(restored.panelCardOpacity == 1)
-        expect(restored.panelTextOpacity == 1)
+        expect(restored.panelPrimaryTextOpacity == 1)
+        expect(restored.panelSecondaryTextOpacity == 1)
+        expect(restored.panelProgressOpacity == 1)
+
+        defaults.removePersistentDomain(forName: suiteName)
+        defaults.set(0.65, forKey: "panelTextOpacity")
+
+        let migrated = MonitorSettings(defaults: defaults)
+        expect(migrated.panelPrimaryTextOpacity == 0.65)
+        expect(migrated.panelSecondaryTextOpacity == 0.65)
+        expect(migrated.panelProgressOpacity == 1)
+
+        migrated.setPanelPrimaryTextOpacity(0.80)
+        let migratedRestored = MonitorSettings(defaults: defaults)
+        expect(migratedRestored.panelPrimaryTextOpacity == 0.80)
+        expect(migratedRestored.panelSecondaryTextOpacity == 0.65)
     }
 
     @MainActor
@@ -198,22 +230,122 @@ enum PanelBackgroundCheck {
         expect(translucentCard.redComponent > opaqueCard.redComponent)
         expect(abs(nativeCard.redComponent - opaqueCard.redComponent) < 0.05)
 
-        let fullText = renderTextCenterPixel(
-            textOpacity: 1,
+        let fullPrimary = renderTextCenterPixel(
+            role: .primary,
+            primaryTextOpacity: 1,
+            secondaryTextOpacity: 1,
             usesCustomBackground: true
         )
-        let dimmedText = renderTextCenterPixel(
-            textOpacity: 0.50,
+        let dimmedPrimary = renderTextCenterPixel(
+            role: .primary,
+            primaryTextOpacity: 0.50,
+            secondaryTextOpacity: 1,
+            usesCustomBackground: true
+        )
+        let unaffectedSecondary = renderTextCenterPixel(
+            role: .secondary,
+            primaryTextOpacity: 0.50,
+            secondaryTextOpacity: 1,
+            usesCustomBackground: true
+        )
+        let dimmedSecondary = renderTextCenterPixel(
+            role: .secondary,
+            primaryTextOpacity: 1,
+            secondaryTextOpacity: 0.50,
+            usesCustomBackground: true
+        )
+        let unaffectedPrimary = renderTextCenterPixel(
+            role: .primary,
+            primaryTextOpacity: 1,
+            secondaryTextOpacity: 0.50,
             usesCustomBackground: true
         )
         let nativeText = renderTextCenterPixel(
-            textOpacity: 0.50,
+            role: .primary,
+            primaryTextOpacity: 0.50,
+            secondaryTextOpacity: 0.50,
             usesCustomBackground: false
         )
 
-        expect(brightness(of: fullText) > 0.90)
-        expect(brightness(of: dimmedText) < brightness(of: fullText) * 0.75)
+        expect(brightness(of: fullPrimary) > 0.90)
+        expect(brightness(of: dimmedPrimary) < brightness(of: fullPrimary) * 0.75)
+        expect(brightness(of: unaffectedSecondary) > 0.90)
+        expect(brightness(of: dimmedSecondary) < brightness(of: fullPrimary) * 0.75)
+        expect(brightness(of: unaffectedPrimary) > 0.90)
         expect(brightness(of: nativeText) > 0.90)
+
+        let fullProgress = renderProgressCenterPixel(
+            progressOpacity: 1,
+            usesCustomBackground: true
+        )
+        let dimmedProgress = renderProgressCenterPixel(
+            progressOpacity: 0.50,
+            usesCustomBackground: true
+        )
+        let nativeProgress = renderProgressCenterPixel(
+            progressOpacity: 0.50,
+            usesCustomBackground: false
+        )
+
+        expect(brightness(of: fullProgress) > 0.90)
+        expect(brightness(of: dimmedProgress) < brightness(of: fullProgress) * 0.75)
+        expect(brightness(of: nativeProgress) > 0.90)
+    }
+
+    @MainActor
+    private static func checkPanelPreviewRendering() {
+        let preview = PanelAppearancePreview(
+            image: solidImage(width: 800, height: 1_200, color: .systemBlue),
+            isBackgroundEnabled: true,
+            dimOpacity: 0.35,
+            cardOpacity: 0.80,
+            primaryTextOpacity: 0.90,
+            secondaryTextOpacity: 0.70,
+            progressOpacity: 0.60,
+            enabledMetrics: [.cpu, .gpu, .memory, .disk, .network],
+            showsDockQuickControl: true
+        )
+        let hostingView = NSHostingView(rootView: preview.fixedSize())
+        let size = hostingView.fittingSize
+
+        expect(abs(size.width - 370) < 1)
+        expect(size.height > size.width)
+    }
+
+    @MainActor
+    private static func writePreviewSnapshot(
+        backgroundPath: String,
+        outputPath: String
+    ) throws {
+        guard let image = NSImage(contentsOfFile: backgroundPath) else {
+            fatalError("Unable to load preview background")
+        }
+        let preview = PanelAppearancePreview(
+            image: image,
+            isBackgroundEnabled: true,
+            dimOpacity: 0.35,
+            cardOpacity: 0.80,
+            primaryTextOpacity: 1,
+            secondaryTextOpacity: 0.75,
+            progressOpacity: 0.80,
+            enabledMetrics: [.cpu, .gpu, .memory, .disk, .network],
+            showsDockQuickControl: true
+        )
+        let hostingView = NSHostingView(rootView: preview.fixedSize())
+        let size = hostingView.fittingSize
+        hostingView.frame = CGRect(origin: .zero, size: size)
+        hostingView.layoutSubtreeIfNeeded()
+
+        guard let bitmap = hostingView.bitmapImageRepForCachingDisplay(
+            in: hostingView.bounds
+        ) else {
+            fatalError("Unable to create preview snapshot bitmap")
+        }
+        hostingView.cacheDisplay(in: hostingView.bounds, to: bitmap)
+        guard let data = bitmap.representation(using: .png, properties: [:]) else {
+            fatalError("Unable to encode preview snapshot")
+        }
+        try data.write(to: URL(fileURLWithPath: outputPath), options: .atomic)
     }
 
     @MainActor
@@ -227,7 +359,9 @@ enum PanelBackgroundCheck {
         }
         .panelReadability(
             cardOpacity: cardOpacity,
-            textOpacity: 1,
+            primaryTextOpacity: 1,
+            secondaryTextOpacity: 1,
+            progressOpacity: 1,
             usesCustomBackground: usesCustomBackground
         )
         return renderCenterPixel(content)
@@ -235,18 +369,43 @@ enum PanelBackgroundCheck {
 
     @MainActor
     private static func renderTextCenterPixel(
-        textOpacity: Double,
+        role: PanelTextRole,
+        primaryTextOpacity: Double,
+        secondaryTextOpacity: Double,
         usesCustomBackground: Bool
     ) -> NSColor {
         let content = ZStack {
             Color.black
             Color.white
                 .frame(width: 60, height: 60)
-                .panelTextReadability()
+                .panelTextReadability(role)
         }
         .panelReadability(
             cardOpacity: 1,
-            textOpacity: textOpacity,
+            primaryTextOpacity: primaryTextOpacity,
+            secondaryTextOpacity: secondaryTextOpacity,
+            progressOpacity: 1,
+            usesCustomBackground: usesCustomBackground
+        )
+        return renderCenterPixel(content)
+    }
+
+    @MainActor
+    private static func renderProgressCenterPixel(
+        progressOpacity: Double,
+        usesCustomBackground: Bool
+    ) -> NSColor {
+        let content = ZStack {
+            Color.black
+            Color.white
+                .frame(width: 60, height: 60)
+                .panelProgressReadability()
+        }
+        .panelReadability(
+            cardOpacity: 1,
+            primaryTextOpacity: 1,
+            secondaryTextOpacity: 1,
+            progressOpacity: progressOpacity,
             usesCustomBackground: usesCustomBackground
         )
         return renderCenterPixel(content)

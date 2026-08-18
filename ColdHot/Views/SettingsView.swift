@@ -117,28 +117,43 @@ struct SettingsView: View {
     @ViewBuilder
     private var panelBackgroundSettings: some View {
         if let image = panelBackgroundStore.image {
-            HStack(alignment: .top, spacing: 14) {
-                PanelBackgroundView(
-                    image: image,
-                    isEnabled: true,
-                    dimOpacity: settings.panelBackgroundDimOpacity
-                )
-                .frame(width: 160, height: 90)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(.quaternary, lineWidth: 1)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("菜单面板真实范围")
+                    .font(.headline)
+
+                HStack {
+                    Spacer(minLength: 0)
+                    PanelAppearancePreview(
+                        image: image,
+                        isBackgroundEnabled: settings.isPanelBackgroundEnabled,
+                        dimOpacity: settings.panelBackgroundDimOpacity,
+                        cardOpacity: settings.panelCardOpacity,
+                        primaryTextOpacity: settings.panelPrimaryTextOpacity,
+                        secondaryTextOpacity: settings.panelSecondaryTextOpacity,
+                        progressOpacity: settings.panelProgressOpacity,
+                        enabledMetrics: previewEnabledMetrics,
+                        showsDockQuickControl: settings.showDockQuickControl
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(.quaternary, lineWidth: 1)
+                    }
+                    Spacer(minLength: 0)
                 }
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("自定义图片")
-                        .font(.headline)
-                    Text("自动裁切铺满整个菜单面板")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Button("更换图片…") { isChoosingBackground = true }
-                }
+                Text("按当前启用指标和 Dock 区域显示，与菜单面板使用相同的 370px 画布和图片裁切。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 10) {
+                Image(systemName: "photo")
+                    .foregroundStyle(.secondary)
+                Text("自定义图片")
+                    .font(.headline)
                 Spacer()
+                Button("更换图片…") { isChoosingBackground = true }
             }
 
             Toggle(
@@ -180,18 +195,50 @@ struct SettingsView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Text("文字亮度")
+                    Text("主文字亮度")
                     Spacer()
-                    Text("\(Int((settings.panelTextOpacity * 100).rounded()))%")
+                    Text("\(Int((settings.panelPrimaryTextOpacity * 100).rounded()))%")
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                 }
                 Slider(
-                    value: panelTextOpacityBinding,
+                    value: panelPrimaryTextOpacityBinding,
                     in: 0.50...1,
                     step: 0.05
                 )
-                .accessibilityLabel("面板文字亮度")
+                .accessibilityLabel("面板主文字亮度")
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("辅助文字亮度")
+                    Spacer()
+                    Text("\(Int((settings.panelSecondaryTextOpacity * 100).rounded()))%")
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+                Slider(
+                    value: panelSecondaryTextOpacityBinding,
+                    in: 0.50...1,
+                    step: 0.05
+                )
+                .accessibilityLabel("面板辅助文字亮度")
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("进度条透明度")
+                    Spacer()
+                    Text("\(Int((settings.panelProgressOpacity * 100).rounded()))%")
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+                Slider(
+                    value: panelProgressOpacityBinding,
+                    in: 0.50...1,
+                    step: 0.05
+                )
+                .accessibilityLabel("面板进度条透明度")
             }
 
             HStack {
@@ -246,11 +293,31 @@ struct SettingsView: View {
         )
     }
 
-    private var panelTextOpacityBinding: Binding<Double> {
+    private var panelPrimaryTextOpacityBinding: Binding<Double> {
         Binding(
-            get: { settings.panelTextOpacity },
-            set: settings.setPanelTextOpacity
+            get: { settings.panelPrimaryTextOpacity },
+            set: settings.setPanelPrimaryTextOpacity
         )
+    }
+
+    private var panelSecondaryTextOpacityBinding: Binding<Double> {
+        Binding(
+            get: { settings.panelSecondaryTextOpacity },
+            set: settings.setPanelSecondaryTextOpacity
+        )
+    }
+
+    private var panelProgressOpacityBinding: Binding<Double> {
+        Binding(
+            get: { settings.panelProgressOpacity },
+            set: settings.setPanelProgressOpacity
+        )
+    }
+
+    private var previewEnabledMetrics: [MetricKind] {
+        MetricKind.allCases.filter {
+            BuildVariant.availableMetrics.contains($0) && settings.isEnabled($0)
+        }
     }
 
     private func handleBackgroundSelection(_ result: Result<[URL], Error>) {

@@ -7,7 +7,7 @@ let projectRoot = scriptURL.deletingLastPathComponent().deletingLastPathComponen
 let outputURL = URL(fileURLWithPath: CommandLine.arguments.dropFirst().first ?? ".")
 let sourceURL = URL(
     fileURLWithPath: CommandLine.arguments.dropFirst(2).first
-        ?? projectRoot.appendingPathComponent("Artwork/ColdHot-AppIcon-Fan-Source.png").path
+        ?? projectRoot.appendingPathComponent("Artwork/ColdHot-AppIcon-Pulse-Source.png").path
 )
 
 guard let sourceImage = NSImage(contentsOf: sourceURL) else {
@@ -88,4 +88,4 @@ for icon in iconFiles {
     )
 }
 
-print("已生成 \(iconFiles.count) 个克制风扇图标尺寸：\(outputURL.path)")
+print("已生成 \(iconFiles.count) 个克制脉冲图标尺寸：\(outputURL.path)")

@@ -27,6 +27,7 @@
 		C10000000000000000000001 /* FanSpinnerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000001 /* FanSpinnerView.swift */; };
 		D10000000000000000000001 /* PanelBackgroundStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000001 /* PanelBackgroundStore.swift */; };
 		E10000000000000000000001 /* PanelBackgroundView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000001 /* PanelBackgroundView.swift */; };
+		F10000000000000000000001 /* PanelAppearancePreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000001 /* PanelAppearancePreview.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -55,6 +56,7 @@
 		C20000000000000000000001 /* FanSpinnerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FanSpinnerView.swift; sourceTree = "<group>"; };
 		D20000000000000000000001 /* PanelBackgroundStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelBackgroundStore.swift; sourceTree = "<group>"; };
 		E20000000000000000000001 /* PanelBackgroundView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelBackgroundView.swift; sourceTree = "<group>"; };
+		F20000000000000000000001 /* PanelAppearancePreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelAppearancePreview.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -127,6 +129,7 @@
 			children = (
 				A20000000000000000000007 /* DashboardView.swift */,
 				E20000000000000000000001 /* PanelBackgroundView.swift */,
+				F20000000000000000000001 /* PanelAppearancePreview.swift */,
 				A20000000000000000000008 /* MetricRow.swift */,
 				A20000000000000000000009 /* SettingsView.swift */,
 				A2000000000000000000000E /* PrivacyPolicyView.swift */,
@@ -237,6 +240,7 @@
 				B10000000000000000000001 /* ThresholdMetric.swift in Sources */,
 				D10000000000000000000001 /* PanelBackgroundStore.swift in Sources */,
 				E10000000000000000000001 /* PanelBackgroundView.swift in Sources */,
+				F10000000000000000000001 /* PanelAppearancePreview.swift in Sources */,
 				A10000000000000000000001 /* ColdHotApp.swift in Sources */,
 				A10000000000000000000002 /* MetricKind.swift in Sources */,
 				A10000000000000000000003 /* MonitorSettings.swift in Sources */,

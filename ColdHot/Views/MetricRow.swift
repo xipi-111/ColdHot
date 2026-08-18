@@ -35,12 +35,12 @@ struct MetricCard<ExpandedContent: View>: View {
                             Text(metric.title)
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(.secondary)
-                                .panelTextReadability()
+                                .panelTextReadability(.primary)
                             Spacer()
                             Text(value)
                                 .font(.system(size: 14, weight: .semibold, design: .rounded))
                                 .monospacedDigit()
-                                .panelTextReadability()
+                                .panelTextReadability(.primary)
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 9, weight: .bold))
                                 .foregroundStyle(.tertiary)
@@ -51,6 +51,7 @@ struct MetricCard<ExpandedContent: View>: View {
                             ProgressView(value: min(max(progress, 0), 1))
                                 .tint(metric.tint)
                                 .controlSize(.mini)
+                                .panelProgressReadability()
                                 .accessibilityHidden(true)
                         }
 
@@ -58,7 +59,7 @@ struct MetricCard<ExpandedContent: View>: View {
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
                             .lineLimit(1)
-                            .panelTextReadability()
+                            .panelTextReadability(.secondary)
                     }
                 }
                 .contentShape(Rectangle())
@@ -96,7 +97,7 @@ struct DetailSection<Content: View>: View {
             Text(title)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(titleTint)
-                .panelTextReadability()
+                .panelTextReadability(.primary)
             content()
         }
     }
@@ -112,14 +113,14 @@ struct DetailValueRow: View {
             Text(label)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .panelTextReadability()
+                .panelTextReadability(.secondary)
             Spacer()
             Text(value)
                 .font(.system(size: 12, weight: .medium, design: .rounded))
                 .foregroundStyle(tint)
                 .monospacedDigit()
                 .multilineTextAlignment(.trailing)
-                .panelTextReadability()
+                .panelTextReadability(.primary)
         }
     }
 }
@@ -135,23 +136,23 @@ struct ProcessActivityList: View {
                 Text("正在建立采样基线…")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
-                    .panelTextReadability()
+                    .panelTextReadability(.secondary)
             } else {
                 ForEach(processes) { process in
                     HStack(spacing: 6) {
                         Text(process.name)
                             .font(.system(size: 11))
                             .lineLimit(1)
-                            .panelTextReadability()
+                            .panelTextReadability(.primary)
                         Text("PID \(process.pid)")
                             .font(.system(size: 9))
                             .foregroundStyle(.tertiary)
-                            .panelTextReadability()
+                            .panelTextReadability(.secondary)
                         Spacer()
                         Text(value(process))
                             .font(.system(size: 11, weight: .semibold, design: .rounded))
                             .monospacedDigit()
-                            .panelTextReadability()
+                            .panelTextReadability(.primary)
                     }
                 }
             }

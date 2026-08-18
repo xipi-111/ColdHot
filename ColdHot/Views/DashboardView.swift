@@ -42,7 +42,7 @@ struct DashboardView: View {
             Divider()
             footer
         }
-        .frame(width: 370)
+        .frame(width: PanelLayout.width)
         .background {
             PanelBackgroundView(
                 image: panelBackgroundStore.image,
@@ -52,7 +52,9 @@ struct DashboardView: View {
         }
         .panelReadability(
             cardOpacity: settings.panelCardOpacity,
-            textOpacity: settings.panelTextOpacity,
+            primaryTextOpacity: settings.panelPrimaryTextOpacity,
+            secondaryTextOpacity: settings.panelSecondaryTextOpacity,
+            progressOpacity: settings.panelProgressOpacity,
             usesCustomBackground: settings.isPanelBackgroundEnabled
                 && panelBackgroundStore.hasImage
         )
@@ -74,10 +76,10 @@ struct DashboardView: View {
     }
 
     private var metricsViewportHeight: CGFloat {
-        let collapsed = CGFloat(enabledMetricKinds.count) * 62
-        let spacing = CGFloat(max(0, enabledMetricKinds.count - 1)) * 8
-        let expansion: CGFloat = monitor.expandedMetric == nil ? 0 : 300
-        return min(max(collapsed + spacing + expansion + 24, 96), 500)
+        PanelLayout.metricsViewportHeight(
+            metricCount: enabledMetricKinds.count,
+            hasExpandedMetric: monitor.expandedMetric != nil
+        )
     }
 
     private var header: some View {
@@ -92,11 +94,11 @@ struct DashboardView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("ColdHot")
                     .font(.headline)
-                    .panelTextReadability()
+                    .panelTextReadability(.primary)
                 Text("更新于 \(monitor.snapshot.timestamp.formatted(date: .omitted, time: .standard))")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .panelTextReadability()
+                    .panelTextReadability(.secondary)
             }
 
             Spacer()
@@ -106,7 +108,7 @@ struct DashboardView: View {
                 Text(thermalTitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .panelTextReadability()
+                    .panelTextReadability(.secondary)
             }
         }
         .padding(12)
@@ -119,14 +121,14 @@ struct DashboardView: View {
                 .foregroundStyle(.secondary)
             Text("尚未选择指标")
                 .font(.headline)
-                .panelTextReadability()
+                .panelTextReadability(.primary)
             Text("在设置中勾选希望显示的性能指标。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .panelTextReadability()
+                .panelTextReadability(.secondary)
             Button(action: openSettingsAndFocus) {
                 Text("打开设置")
-                    .panelTextReadability()
+                    .panelTextReadability(.primary)
             }
                 .buttonStyle(.borderedProminent)
         }
@@ -142,23 +144,23 @@ struct DashboardView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Dock 即时弹出")
                     .font(.system(size: 12, weight: .medium))
-                    .panelTextReadability()
+                    .panelTextReadability(.primary)
                 if let error = dockController.errorMessage {
                     Text(error)
                         .foregroundStyle(.red)
-                        .panelTextReadability()
+                        .panelTextReadability(.secondary)
                 } else if dockController.isInstant {
                     Text("Dock零延迟弹出已开启")
                         .foregroundStyle(.tertiary)
-                        .panelTextReadability()
+                        .panelTextReadability(.secondary)
                 } else if !dockController.isAutoHideEnabled {
                     Text("Dock 自动隐藏当前已关闭")
                         .foregroundStyle(.tertiary)
-                        .panelTextReadability()
+                        .panelTextReadability(.secondary)
                 } else {
                     Text("使用系统默认弹出延迟")
                         .foregroundStyle(.tertiary)
-                        .panelTextReadability()
+                        .panelTextReadability(.secondary)
                 }
             }
             .font(.caption2)
@@ -186,7 +188,7 @@ struct DashboardView: View {
             Button(action: openSettingsAndFocus) {
                 Label {
                     Text("设置")
-                        .panelTextReadability()
+                        .panelTextReadability(.secondary)
                 } icon: {
                     Image(systemName: "gearshape")
                 }
@@ -200,11 +202,11 @@ struct DashboardView: View {
             Text("每 \(settings.sampleInterval.formatted()) 秒")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
-                .panelTextReadability()
+                .panelTextReadability(.secondary)
             Divider().frame(height: 14)
             Button(action: { NSApplication.shared.terminate(nil) }) {
                 Text("退出")
-                    .panelTextReadability()
+                    .panelTextReadability(.secondary)
             }
                 .buttonStyle(.plain)
         }
@@ -244,7 +246,7 @@ struct DashboardView: View {
                 SpinningFanIcon(rpm: fastestFan.speedRPM)
                 Text("\(Int(fastestFan.speedRPM.rounded())) RPM")
                     .monospacedDigit()
-                    .panelTextReadability()
+                    .panelTextReadability(.secondary)
             }
             .font(.caption2)
             .foregroundStyle(.secondary)
@@ -253,7 +255,7 @@ struct DashboardView: View {
             HStack(spacing: 4) {
                 Image(systemName: "fan.fill")
                 Text("— RPM")
-                    .panelTextReadability()
+                    .panelTextReadability(.secondary)
             }
             .font(.caption2)
             .foregroundStyle(.tertiary)
@@ -379,12 +381,15 @@ struct DashboardView: View {
                                 Text("C\(index + 1)")
                                     .font(.system(size: 9))
                                     .foregroundStyle(.tertiary)
-                                    .panelTextReadability()
-                                ProgressView(value: usage / 100).controlSize(.mini).tint(.blue)
+                                    .panelTextReadability(.secondary)
+                                ProgressView(value: usage / 100)
+                                    .controlSize(.mini)
+                                    .tint(.blue)
+                                    .panelProgressReadability()
                                 Text(percent(usage))
                                     .font(.system(size: 9, design: .rounded))
                                     .monospacedDigit()
-                                    .panelTextReadability()
+                                    .panelTextReadability(.primary)
                             }
                         }
                     }
@@ -529,7 +534,7 @@ struct DashboardView: View {
                 Text("汇总本机可用且通过有效性检查的 CPU 传感器。")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
-                    .panelTextReadability()
+                    .panelTextReadability(.secondary)
             }
         }
         if settings.isDetailEnabled(.thermalGPU) {
@@ -581,7 +586,7 @@ struct DashboardView: View {
             Text("此机型未返回有效温度")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
-                .panelTextReadability()
+                .panelTextReadability(.secondary)
         }
     }
 
@@ -635,7 +640,7 @@ struct DashboardView: View {
                 )
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
-                .panelTextReadability()
+                .panelTextReadability(.secondary)
             }
             DetailSection(title: "电气信息") {
                 DetailValueRow(label: "电压", value: battery.voltageVolts.map { decimal($0) + " V" } ?? "不可用")
@@ -654,14 +659,14 @@ struct DashboardView: View {
         Text("未选择详细项目，可在设置中启用。")
             .font(.caption)
             .foregroundStyle(.tertiary)
-            .panelTextReadability()
+            .panelTextReadability(.secondary)
     }
 
     private var samplingPlaceholder: some View {
         Text("正在采样…")
             .font(.caption)
             .foregroundStyle(.tertiary)
-            .panelTextReadability()
+            .panelTextReadability(.secondary)
     }
 
     private func hasEnabledDetail(for metric: MetricKind) -> Bool {

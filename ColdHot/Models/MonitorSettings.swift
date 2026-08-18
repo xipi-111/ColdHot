@@ -7,7 +7,9 @@ final class MonitorSettings: ObservableObject {
     ]
     static let defaultPanelBackgroundDimOpacity = 0.35
     static let defaultPanelCardOpacity = 1.0
-    static let defaultPanelTextOpacity = 1.0
+    static let defaultPanelPrimaryTextOpacity = 1.0
+    static let defaultPanelSecondaryTextOpacity = 1.0
+    static let defaultPanelProgressOpacity = 1.0
 
     @Published private(set) var enabledMetrics: Set<MetricKind> {
         didSet { persistMetrics() }
@@ -31,7 +33,11 @@ final class MonitorSettings: ObservableObject {
 
     @Published private(set) var panelCardOpacity: Double
 
-    @Published private(set) var panelTextOpacity: Double
+    @Published private(set) var panelPrimaryTextOpacity: Double
+
+    @Published private(set) var panelSecondaryTextOpacity: Double
+
+    @Published private(set) var panelProgressOpacity: Double
 
     @Published private(set) var thresholdRules: [ThresholdMetric: ThresholdRule] {
         didSet { persistThresholdRules() }
@@ -85,14 +91,23 @@ final class MonitorSettings: ObservableObject {
             panelCardOpacity = Self.defaultPanelCardOpacity
         }
 
-        if defaults.object(forKey: Keys.panelTextOpacity) != nil {
-            let storedOpacity = defaults.double(forKey: Keys.panelTextOpacity)
-            panelTextOpacity = storedOpacity.isFinite
-                ? min(max(storedOpacity, 0.50), 1)
-                : Self.defaultPanelTextOpacity
-        } else {
-            panelTextOpacity = Self.defaultPanelTextOpacity
-        }
+        panelPrimaryTextOpacity = Self.readPanelOpacity(
+            from: defaults,
+            key: Keys.panelPrimaryTextOpacity,
+            legacyKey: Keys.panelTextOpacity,
+            defaultValue: Self.defaultPanelPrimaryTextOpacity
+        )
+        panelSecondaryTextOpacity = Self.readPanelOpacity(
+            from: defaults,
+            key: Keys.panelSecondaryTextOpacity,
+            legacyKey: Keys.panelTextOpacity,
+            defaultValue: Self.defaultPanelSecondaryTextOpacity
+        )
+        panelProgressOpacity = Self.readPanelOpacity(
+            from: defaults,
+            key: Keys.panelProgressOpacity,
+            defaultValue: Self.defaultPanelProgressOpacity
+        )
 
         let defaultRules = Dictionary(uniqueKeysWithValues: ThresholdMetric.allCases.map {
             ($0, ThresholdRule.defaultRule(for: $0))
@@ -182,11 +197,25 @@ final class MonitorSettings: ObservableObject {
         defaults.set(clamped, forKey: Keys.panelCardOpacity)
     }
 
-    func setPanelTextOpacity(_ opacity: Double) {
+    func setPanelPrimaryTextOpacity(_ opacity: Double) {
         guard opacity.isFinite else { return }
         let clamped = min(max(opacity, 0.50), 1)
-        panelTextOpacity = clamped
-        defaults.set(clamped, forKey: Keys.panelTextOpacity)
+        panelPrimaryTextOpacity = clamped
+        defaults.set(clamped, forKey: Keys.panelPrimaryTextOpacity)
+    }
+
+    func setPanelSecondaryTextOpacity(_ opacity: Double) {
+        guard opacity.isFinite else { return }
+        let clamped = min(max(opacity, 0.50), 1)
+        panelSecondaryTextOpacity = clamped
+        defaults.set(clamped, forKey: Keys.panelSecondaryTextOpacity)
+    }
+
+    func setPanelProgressOpacity(_ opacity: Double) {
+        guard opacity.isFinite else { return }
+        let clamped = min(max(opacity, 0.50), 1)
+        panelProgressOpacity = clamped
+        defaults.set(clamped, forKey: Keys.panelProgressOpacity)
     }
 
     func reset() {
@@ -197,7 +226,9 @@ final class MonitorSettings: ObservableObject {
         setPanelBackgroundEnabled(false)
         setPanelBackgroundDimOpacity(Self.defaultPanelBackgroundDimOpacity)
         setPanelCardOpacity(Self.defaultPanelCardOpacity)
-        setPanelTextOpacity(Self.defaultPanelTextOpacity)
+        setPanelPrimaryTextOpacity(Self.defaultPanelPrimaryTextOpacity)
+        setPanelSecondaryTextOpacity(Self.defaultPanelSecondaryTextOpacity)
+        setPanelProgressOpacity(Self.defaultPanelProgressOpacity)
         thresholdRules = Dictionary(uniqueKeysWithValues: ThresholdMetric.allCases.map {
             ($0, ThresholdRule.defaultRule(for: $0))
         })
@@ -218,6 +249,27 @@ final class MonitorSettings: ObservableObject {
         }
     }
 
+    private static func readPanelOpacity(
+        from defaults: UserDefaults,
+        key: String,
+        legacyKey: String? = nil,
+        defaultValue: Double
+    ) -> Double {
+        let storedKey: String?
+        if defaults.object(forKey: key) != nil {
+            storedKey = key
+        } else if let legacyKey, defaults.object(forKey: legacyKey) != nil {
+            storedKey = legacyKey
+        } else {
+            storedKey = nil
+        }
+
+        guard let storedKey else { return defaultValue }
+        let storedOpacity = defaults.double(forKey: storedKey)
+        guard storedOpacity.isFinite else { return defaultValue }
+        return min(max(storedOpacity, 0.50), 1)
+    }
+
     private enum Keys {
         static let enabledMetrics = "enabledMetrics"
         static let enabledDetails = "enabledDetails"
@@ -226,6 +278,9 @@ final class MonitorSettings: ObservableObject {
         static let isPanelBackgroundEnabled = "isPanelBackgroundEnabled"
         static let panelBackgroundDimOpacity = "panelBackgroundDimOpacity"
         static let panelCardOpacity = "panelCardOpacity"
+        static let panelPrimaryTextOpacity = "panelPrimaryTextOpacity"
+        static let panelSecondaryTextOpacity = "panelSecondaryTextOpacity"
+        static let panelProgressOpacity = "panelProgressOpacity"
         static let panelTextOpacity = "panelTextOpacity"
         static let thresholdRules = "thresholdRules"
     }
