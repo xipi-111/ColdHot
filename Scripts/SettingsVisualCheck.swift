@@ -2,6 +2,16 @@ import AppKit
 import Combine
 import SwiftUI
 
+private func expect(
+    _ condition: @autoclosure () -> Bool,
+    file: StaticString = #file,
+    line: UInt = #line
+) {
+    guard condition() else {
+        fatalError("Check failed", file: file, line: line)
+    }
+}
+
 @MainActor
 final class UpdateController: ObservableObject {
     var automaticallyChecksForUpdates = true
@@ -13,6 +23,16 @@ final class UpdateController: ObservableObject {
 enum SettingsVisualCheck {
     @MainActor
     static func main() throws {
+        expect(SettingsLayout.defaultContentSize == CGSize(width: 920, height: 720))
+        expect(SettingsLayout.minimumContentSize == CGSize(width: 860, height: 680))
+        expect(SettingsLayout.sidebarWidth == 204)
+        expect(SettingsPage.allCases.map(\.rawValue) == [
+            "外观", "指标", "阈值提醒", "通用", "关于"
+        ])
+        expect(SettingsSidebarSelection.move(from: .appearance, direction: .up) == .about)
+        expect(SettingsSidebarSelection.move(from: .about, direction: .down) == .appearance)
+        expect(SettingsSidebarSelection.move(from: .metrics, direction: .down) == .alerts)
+
         let suiteName = "com.xipiyoung.ColdHot.settings-visual-check"
         guard let defaults = UserDefaults(suiteName: suiteName) else {
             fatalError("Unable to create isolated defaults suite")

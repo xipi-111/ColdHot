@@ -2,26 +2,6 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
-private enum SettingsPage: String, CaseIterable, Identifiable {
-    case appearance = "外观"
-    case metrics = "指标"
-    case alerts = "阈值提醒"
-    case general = "通用"
-    case about = "关于"
-
-    var id: String { rawValue }
-
-    var symbol: String {
-        switch self {
-        case .appearance: "paintbrush"
-        case .metrics: "gauge.with.dots.needle.50percent"
-        case .alerts: "exclamationmark.triangle"
-        case .general: "gearshape"
-        case .about: "info.circle"
-        }
-    }
-}
-
 struct SettingsView: View {
     @ObservedObject var settings: MonitorSettings
     @ObservedObject var panelBackgroundStore: PanelBackgroundStore
