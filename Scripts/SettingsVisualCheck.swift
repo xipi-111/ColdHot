@@ -53,7 +53,7 @@ enum SettingsVisualCheck {
         )
 
         let hostingView = NSHostingView(rootView: view)
-        hostingView.frame = CGRect(x: 0, y: 0, width: 1_040, height: 760)
+        hostingView.frame = CGRect(origin: .zero, size: SettingsLayout.defaultContentSize)
         let window = NSWindow(
             contentRect: hostingView.frame,
             styleMask: [.titled, .closable, .resizable],
@@ -67,21 +67,14 @@ enum SettingsVisualCheck {
         RunLoop.main.run(until: Date().addingTimeInterval(0.5))
 
         let splitViews = descendants(of: hostingView).compactMap { $0 as? NSSplitView }
-        guard !splitViews.isEmpty else {
-            fatalError("Settings must use the native NavigationSplitView sidebar hierarchy")
-        }
-
-        guard window.styleMask.contains(.fullSizeContentView) else {
-            fatalError("Settings window must extend the sidebar behind the title bar")
-        }
-        guard window.titleVisibility == .hidden,
-              window.titlebarAppearsTransparent,
-              window.titlebarSeparatorStyle == .none else {
-            fatalError("Settings window must use the Apple Music-style transparent title bar")
-        }
-        guard window.toolbar?.isVisible != true else {
-            fatalError("Settings must not show a title or sidebar-toggle toolbar above the sidebar")
-        }
+        expect(splitViews.isEmpty)
+        expect(window.contentMinSize == SettingsLayout.minimumContentSize)
+        expect(window.contentView?.bounds.size == SettingsLayout.defaultContentSize)
+        expect(window.styleMask.contains(.fullSizeContentView))
+        expect(window.titleVisibility == .hidden)
+        expect(window.titlebarAppearsTransparent)
+        expect(window.titlebarSeparatorStyle == .none)
+        expect(window.toolbar?.isVisible != true)
 
         // SwiftUI can restore its standard title bar after the settings
         // window becomes key. The Apple Music-style treatment must persist.
@@ -96,6 +89,15 @@ enum SettingsVisualCheck {
               window.titlebarAppearsTransparent else {
             fatalError("Settings title bar configuration must survive window activation")
         }
+        expect(window.contentMinSize == SettingsLayout.minimumContentSize)
+
+        window.contentMinSize = .zero
+        NotificationCenter.default.post(
+            name: NSWindow.didResizeNotification,
+            object: window
+        )
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        expect(window.contentMinSize == SettingsLayout.minimumContentSize)
 
         guard let bitmap = hostingView.bitmapImageRepForCachingDisplay(
             in: hostingView.bounds

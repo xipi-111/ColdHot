@@ -16,28 +16,19 @@ struct SettingsView: View {
     @State private var notificationAuthorizationDenied = false
 
     var body: some View {
-        NavigationSplitView {
-            settingsSidebar
-                .navigationSplitViewColumnWidth(min: 190, ideal: 208, max: 250)
-        } detail: {
-            VStack(spacing: 0) {
-                HStack {
-                    Text(selectedPage.rawValue)
-                        .font(.system(size: 30, weight: .bold))
-                    Spacer()
-                }
-                .padding(.horizontal, 30)
-                .padding(.top, 28)
-                .padding(.bottom, 16)
-
-                selectedSettingsPage
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-            .background(Color(nsColor: .windowBackgroundColor))
+        SettingsShell(selection: $selectedPage, versionText: currentVersionText) {
+            selectedSettingsPage
         }
-        .navigationSplitViewStyle(.balanced)
-        .tint(.green)
-        .frame(minWidth: 1_040, minHeight: 760)
+        .frame(
+            minWidth: SettingsLayout.minimumContentSize.width,
+            idealWidth: SettingsLayout.defaultContentSize.width,
+            maxWidth: .infinity,
+            minHeight: SettingsLayout.minimumContentSize.height,
+            idealHeight: SettingsLayout.defaultContentSize.height,
+            maxHeight: .infinity,
+            alignment: .topLeading
+        )
+        .ignoresSafeArea(.container, edges: .top)
         .background(SettingsWindowConfigurator())
         .sheet(isPresented: $showsPrivacyPolicy) {
             PrivacyPolicyView()
@@ -65,44 +56,6 @@ struct SettingsView: View {
             Button("好", role: .cancel) {}
         } message: {
             Text("请在系统设置的通知页面允许 ColdHot 发送通知。")
-        }
-    }
-
-    private var settingsSidebar: some View {
-        VStack(spacing: 0) {
-            List(selection: Binding<SettingsPage?>(
-                get: { selectedPage },
-                set: { selection in
-                    if let selection { selectedPage = selection }
-                }
-            )) {
-                Section("设置") {
-                    ForEach(SettingsPage.allCases) { page in
-                        Label(page.rawValue, systemImage: page.symbol)
-                            .tag(page)
-                    }
-                }
-            }
-            .listStyle(.sidebar)
-
-            Divider()
-            HStack(spacing: 9) {
-                Image(systemName: "gauge.with.dots.needle.50percent")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.green)
-                    .frame(width: 28, height: 28)
-                    .background(.quaternary, in: Circle())
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("ColdHot")
-                        .font(.caption.weight(.medium))
-                    Text(currentVersionText)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
         }
     }
 
@@ -834,9 +787,17 @@ private struct SettingsWindowConfigurator: NSViewRepresentable {
     }
 }
 
+@MainActor
+private protocol SettingsHostingSizing: AnyObject {
+    var sizingOptions: NSHostingSizingOptions { get set }
+}
+
+extension NSHostingView: SettingsHostingSizing {}
+
 private final class SettingsWindowConfigurationView: NSView {
     private weak var configuredWindow: NSWindow?
     private var windowObservers: [NSObjectProtocol] = []
+    private var contentMinSizeObservation: NSKeyValueObservation?
 
     deinit {
         removeWindowObservers()
@@ -850,17 +811,26 @@ private final class SettingsWindowConfigurationView: NSView {
     func configureWindow() {
         DispatchQueue.main.async { [weak self] in
             guard let self, let window = self.window else { return }
-            self.applyConfiguration(to: window)
+            let shouldSetInitialSize = self.configuredWindow !== window
             self.observeWindowIfNeeded(window)
+            self.applyConfiguration(to: window, setInitialSize: shouldSetInitialSize)
         }
     }
 
-    private func applyConfiguration(to window: NSWindow) {
+    private func applyConfiguration(to window: NSWindow, setInitialSize: Bool = false) {
+        if let hostingView = window.contentView as? any SettingsHostingSizing,
+           hostingView.sizingOptions.contains(.minSize) {
+            hostingView.sizingOptions.remove(.minSize)
+        }
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.titlebarSeparatorStyle = .none
         window.styleMask.insert(.fullSizeContentView)
+        window.contentMinSize = SettingsLayout.minimumContentSize
         window.toolbar?.isVisible = false
+        if setInitialSize {
+            window.setContentSize(SettingsLayout.defaultContentSize)
+        }
     }
 
     private func observeWindowIfNeeded(_ window: NSWindow) {
@@ -883,11 +853,20 @@ private final class SettingsWindowConfigurationView: NSView {
                 self.applyConfiguration(to: window)
             }
         }
+        contentMinSizeObservation = window.observe(\.contentMinSize, options: [.new]) {
+            [weak self, weak window] _, change in
+            guard let self, let window,
+                  self.configuredWindow === window,
+                  change.newValue != SettingsLayout.minimumContentSize else { return }
+            window.contentMinSize = SettingsLayout.minimumContentSize
+        }
     }
 
     private func removeWindowObservers() {
         let center = NotificationCenter.default
         windowObservers.forEach(center.removeObserver)
         windowObservers.removeAll()
+        contentMinSizeObservation?.invalidate()
+        contentMinSizeObservation = nil
     }
 }
