@@ -25,6 +25,7 @@
 		A10000000000000000000010 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* PrivacyInfo.xcprivacy */; };
 		B10000000000000000000001 /* ThresholdMetric.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000001 /* ThresholdMetric.swift */; };
 		C10000000000000000000001 /* FanSpinnerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000001 /* FanSpinnerView.swift */; };
+		D10000000000000000000001 /* PanelBackgroundStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000001 /* PanelBackgroundStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -51,6 +52,7 @@
 		A20000000000000000000014 /* AppStoreRelease.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = AppStoreRelease.xcconfig; sourceTree = "<group>"; };
 		B20000000000000000000001 /* ThresholdMetric.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThresholdMetric.swift; sourceTree = "<group>"; };
 		C20000000000000000000001 /* FanSpinnerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FanSpinnerView.swift; sourceTree = "<group>"; };
+		D20000000000000000000001 /* PanelBackgroundStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelBackgroundStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -99,6 +101,7 @@
 			children = (
 				A20000000000000000000002 /* MetricKind.swift */,
 				A20000000000000000000003 /* MonitorSettings.swift */,
+				D20000000000000000000001 /* PanelBackgroundStore.swift */,
 				A20000000000000000000004 /* PerformanceSnapshot.swift */,
 				B20000000000000000000001 /* ThresholdMetric.swift */,
 			);
@@ -229,6 +232,7 @@
 			files = (
 				C10000000000000000000001 /* FanSpinnerView.swift in Sources */,
 				B10000000000000000000001 /* ThresholdMetric.swift in Sources */,
+				D10000000000000000000001 /* PanelBackgroundStore.swift in Sources */,
 				A10000000000000000000001 /* ColdHotApp.swift in Sources */,
 				A10000000000000000000002 /* MetricKind.swift in Sources */,
 				A10000000000000000000003 /* MonitorSettings.swift in Sources */,

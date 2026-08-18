@@ -1,9 +1,14 @@
 import Foundation
+import AppKit
+import ImageIO
+import UniformTypeIdentifiers
 
 @main
 enum PanelBackgroundCheck {
+    @MainActor
     static func main() throws {
         checkSettingsPersistence()
+        try checkImageLifecycle()
         print("Panel background checks passed")
     }
 
@@ -32,6 +37,104 @@ enum PanelBackgroundCheck {
         restored.reset()
         expect(!restored.isPanelBackgroundEnabled)
         expect(restored.panelBackgroundDimOpacity == 0.35)
+    }
+
+    @MainActor
+    private static func checkImageLifecycle() throws {
+        let fileManager = FileManager.default
+        let rootDirectory = fileManager.temporaryDirectory
+            .appendingPathComponent("ColdHotPanelBackgroundCheck-\(UUID().uuidString)")
+        try fileManager.createDirectory(
+            at: rootDirectory,
+            withIntermediateDirectories: true
+        )
+        defer { try? fileManager.removeItem(at: rootDirectory) }
+
+        let sourceURL = rootDirectory.appendingPathComponent("source.png")
+        try writeTestPNG(
+            to: sourceURL,
+            width: 2_400,
+            height: 1_200,
+            color: .systemRed
+        )
+
+        let storeDirectory = rootDirectory.appendingPathComponent("store")
+        let store = PanelBackgroundStore(directoryURL: storeDirectory)
+        expect(!store.hasImage)
+
+        try store.importImage(from: sourceURL)
+        expect(store.hasImage)
+        expect(store.fileURL.lastPathComponent == "background.png")
+        let storedPixelSize = try pixelSize(of: store.fileURL)
+        expect(storedPixelSize == CGSize(width: 1_600, height: 800))
+
+        let storedBeforeInvalidImport = try Data(contentsOf: store.fileURL)
+        let invalidURL = rootDirectory.appendingPathComponent("invalid.txt")
+        try Data("not an image".utf8).write(to: invalidURL)
+        do {
+            try store.importImage(from: invalidURL)
+            fatalError("Invalid image import should fail")
+        } catch {}
+        expect(store.hasImage)
+        let storedAfterInvalidImport = try Data(contentsOf: store.fileURL)
+        expect(storedAfterInvalidImport == storedBeforeInvalidImport)
+
+        let restored = PanelBackgroundStore(directoryURL: storeDirectory)
+        expect(restored.hasImage)
+        expect(restored.image != nil)
+
+        try restored.removeImage()
+        expect(!restored.hasImage)
+        expect(!fileManager.fileExists(atPath: restored.fileURL.path))
+    }
+
+    private static func writeTestPNG(
+        to url: URL,
+        width: Int,
+        height: Int,
+        color: NSColor
+    ) throws {
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGBitmapInfo.byteOrder32Big.rawValue
+            | CGImageAlphaInfo.premultipliedLast.rawValue
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo
+        ) else {
+            fatalError("Unable to create test image context")
+        }
+        context.setFillColor(color.cgColor)
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+
+        guard let image = context.makeImage(),
+              let destination = CGImageDestinationCreateWithURL(
+                url as CFURL,
+                UTType.png.identifier as CFString,
+                1,
+                nil
+              ) else {
+            fatalError("Unable to create test PNG destination")
+        }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else {
+            fatalError("Unable to write test PNG")
+        }
+    }
+
+    private static func pixelSize(of url: URL) throws -> CGSize {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil)
+                as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? NSNumber,
+              let height = properties[kCGImagePropertyPixelHeight] as? NSNumber else {
+            fatalError("Unable to inspect image dimensions")
+        }
+        return CGSize(width: width.doubleValue, height: height.doubleValue)
     }
 
     private static func expect(
