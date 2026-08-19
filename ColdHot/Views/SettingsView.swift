@@ -15,7 +15,6 @@ struct SettingsView: View {
     @State private var backgroundErrorMessage: String?
     @State private var notificationAuthorizationDenied = false
     @State private var backgroundDragStartPosition: CGPoint?
-    @FocusState private var isBackgroundPreviewFocused: Bool
 
     init(
         settings: MonitorSettings,
@@ -140,7 +139,7 @@ struct SettingsView: View {
 
                         if settings.isPanelBackgroundEnabled,
                            panelBackgroundStore.hasImage {
-                            Text("拖动预览调整图片位置，方向键可微调")
+                            Text("拖动预览调整图片位置，也可使用右侧按钮微调")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -436,7 +435,7 @@ struct SettingsView: View {
                 ) {
                     SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
                         settingsValueRow(
-                            "CPU",
+                            "CPU（整机）",
                             value: monitor.selfResourceSnapshot.cpuUsage.formatted(
                                 .number.precision(.fractionLength(1))
                             ) + "%"
@@ -502,6 +501,35 @@ struct SettingsView: View {
                         step: 0.05
                     )
                     .accessibilityLabel("背景图片缩放")
+                }
+            }
+            SettingsSectionDivider()
+            SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
+                HStack(spacing: 10) {
+                    Text("图片位置")
+                    Spacer()
+                    HStack(spacing: 6) {
+                        backgroundPositionButton(
+                            systemImage: "arrow.left",
+                            direction: .left,
+                            accessibilityLabel: "向左微调背景图片"
+                        )
+                        backgroundPositionButton(
+                            systemImage: "arrow.up",
+                            direction: .up,
+                            accessibilityLabel: "向上微调背景图片"
+                        )
+                        backgroundPositionButton(
+                            systemImage: "arrow.down",
+                            direction: .down,
+                            accessibilityLabel: "向下微调背景图片"
+                        )
+                        backgroundPositionButton(
+                            systemImage: "arrow.right",
+                            direction: .right,
+                            accessibilityLabel: "向右微调背景图片"
+                        )
+                    }
                 }
             }
             SettingsSectionDivider()
@@ -809,12 +837,9 @@ struct SettingsView: View {
         if settings.isPanelBackgroundEnabled, let image = panelBackgroundStore.image {
             Color.clear
                 .contentShape(Rectangle())
-                .focusable()
-                .focused($isBackgroundPreviewFocused)
                 .gesture(
                     DragGesture(minimumDistance: 1)
                         .onChanged { value in
-                            isBackgroundPreviewFocused = true
                             let start = backgroundDragStartPosition
                                 ?? panelBackgroundPosition
                             if backgroundDragStartPosition == nil {
@@ -840,31 +865,33 @@ struct SettingsView: View {
                             backgroundDragStartPosition = nil
                         }
                 )
-                .simultaneousGesture(
-                    TapGesture().onEnded {
-                        isBackgroundPreviewFocused = true
-                    }
-                )
-                .onMoveCommand { direction in
-                    movePanelBackground(direction)
-                }
                 .accessibilityLabel("调整背景图片位置")
-                .accessibilityHint("拖动图片调整位置，或使用方向键微调")
+                .accessibilityHint("拖动图片调整位置，或使用右侧方向按钮微调")
         }
     }
 
-    private func movePanelBackground(_ direction: MoveCommandDirection) {
-        let step = 0.025
-        var x = settings.panelBackgroundPositionX
-        var y = settings.panelBackgroundPositionY
-        switch direction {
-        case .left: x -= step
-        case .right: x += step
-        case .up: y -= step
-        case .down: y += step
-        @unknown default: return
+    private func backgroundPositionButton(
+        systemImage: String,
+        direction: PanelBackgroundNudgeDirection,
+        accessibilityLabel: String
+    ) -> some View {
+        Button {
+            movePanelBackground(direction)
+        } label: {
+            Image(systemName: systemImage)
+                .frame(width: 16, height: 16)
         }
-        settings.setPanelBackgroundPosition(x: x, y: y)
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private func movePanelBackground(_ direction: PanelBackgroundNudgeDirection) {
+        let updated = PanelBackgroundPositionAdjustment.nudged(
+            panelBackgroundPosition,
+            direction: direction
+        )
+        settings.setPanelBackgroundPosition(x: updated.x, y: updated.y)
     }
 
     private func metricSetting(_ metric: MetricKind) -> some View {

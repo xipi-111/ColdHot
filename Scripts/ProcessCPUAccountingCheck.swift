@@ -10,6 +10,38 @@ enum ProcessCPUAccountingCheck {
         )
 
         expect(abs(usage - 36.3) < 0.001)
+
+        let wholeMachineUsage = ProcessCPUAccounting.wholeMachineUsage(
+            processUsage: usage,
+            logicalProcessorCount: 14
+        )
+        expect(abs(wholeMachineUsage - (36.3 / 14)) < 0.001)
+        expect(
+            abs(
+                ProcessCPUAccounting.wholeMachineUsage(
+                    processUsage: 400,
+                    logicalProcessorCount: 14
+                ) - (400.0 / 14)
+            ) < 0.001
+        )
+        expect(
+            ProcessCPUAccounting.wholeMachineUsage(
+                processUsage: 1_600,
+                logicalProcessorCount: 14
+            ) == 100
+        )
+        expect(
+            ProcessCPUAccounting.wholeMachineUsage(
+                processUsage: .nan,
+                logicalProcessorCount: 14
+            ) == 0
+        )
+        expect(
+            ProcessCPUAccounting.wholeMachineUsage(
+                processUsage: 36.3,
+                logicalProcessorCount: 0
+            ) == 36.3
+        )
         print("Process CPU accounting checks passed")
     }
 

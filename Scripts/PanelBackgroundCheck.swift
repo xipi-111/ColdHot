@@ -174,6 +174,40 @@ enum PanelBackgroundCheck {
             maximumOffset: CGSize(width: 50, height: 0)
         )
         expect(dragged == CGPoint(x: 0.5, y: 0))
+
+        let position = CGPoint(x: 0.2, y: -0.3)
+        expectPointsEqual(
+            PanelBackgroundPositionAdjustment.nudged(position, direction: .left),
+            CGPoint(x: 0.175, y: -0.3)
+        )
+        expectPointsEqual(
+            PanelBackgroundPositionAdjustment.nudged(position, direction: .right),
+            CGPoint(x: 0.225, y: -0.3)
+        )
+        expectPointsEqual(
+            PanelBackgroundPositionAdjustment.nudged(position, direction: .up),
+            CGPoint(x: 0.2, y: -0.325)
+        )
+        expectPointsEqual(
+            PanelBackgroundPositionAdjustment.nudged(position, direction: .down),
+            CGPoint(x: 0.2, y: -0.275)
+        )
+        expectPointsEqual(
+            PanelBackgroundPositionAdjustment.nudged(
+                CGPoint(x: -0.99, y: 0.99),
+                direction: .left,
+                step: 0.1
+            ),
+            CGPoint(x: -1, y: 0.99)
+        )
+        expectPointsEqual(
+            PanelBackgroundPositionAdjustment.nudged(
+                CGPoint(x: -0.99, y: 0.99),
+                direction: .down,
+                step: 0.1
+            ),
+            CGPoint(x: -0.99, y: 1)
+        )
     }
 
     private static func checkPreviewLiveTransformWiring() throws {
@@ -202,10 +236,6 @@ enum PanelBackgroundCheck {
         expect(preview.contains("position: backgroundPosition"))
         expect(settings.contains("backgroundZoom: settings.panelBackgroundZoom"))
         expect(settings.contains("backgroundPosition: panelBackgroundPosition"))
-        expect(settings.contains(".focusable()"))
-        expect(settings.contains(".focused($isBackgroundPreviewFocused)"))
-        expect(settings.contains(".onMoveCommand"))
-        expect(!settings.contains(".focusEffectDisabled()"))
     }
 
     @MainActor
@@ -787,6 +817,21 @@ enum PanelBackgroundCheck {
             fatalError("Unable to convert sampled color to sRGB")
         }
         return max(rgb.redComponent, rgb.greenComponent, rgb.blueComponent)
+    }
+
+    private static func expectPointsEqual(
+        _ actual: CGPoint,
+        _ expected: CGPoint,
+        accuracy: CGFloat = 0.000_001,
+        file: StaticString = #file,
+        line: UInt = #line
+    ) {
+        expect(
+            abs(actual.x - expected.x) <= accuracy
+                && abs(actual.y - expected.y) <= accuracy,
+            file: file,
+            line: line
+        )
     }
 
     private static func expect(

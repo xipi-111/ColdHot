@@ -388,12 +388,16 @@ final class PerformanceMonitor: ObservableObject {
         }
         let elapsed = now.timeIntervalSince(previous.timestamp)
         guard elapsed > 0 else { return nil }
-        let cpuUsage = counters.cpuTicks >= previous.cpuTicks
+        let processCPUUsage = counters.cpuTicks >= previous.cpuTicks
             ? processCPUAccounting.cpuUsage(
                 deltaTicks: counters.cpuTicks - previous.cpuTicks,
                 elapsedSeconds: elapsed
             )
             : 0
+        let cpuUsage = ProcessCPUAccounting.wholeMachineUsage(
+            processUsage: processCPUUsage,
+            logicalProcessorCount: ProcessInfo.processInfo.activeProcessorCount
+        )
         let wakeups = counters.wakeups >= previous.wakeups
             ? Double(counters.wakeups - previous.wakeups) / elapsed
             : 0

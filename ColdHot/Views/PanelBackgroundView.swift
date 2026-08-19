@@ -101,6 +101,37 @@ enum PanelScrollBehavior {
     }
 }
 
+enum PanelBackgroundNudgeDirection {
+    case left
+    case right
+    case up
+    case down
+}
+
+enum PanelBackgroundPositionAdjustment {
+    static func nudged(
+        _ position: CGPoint,
+        direction: PanelBackgroundNudgeDirection,
+        step: CGFloat = 0.025
+    ) -> CGPoint {
+        var x = position.x
+        var y = position.y
+        let safeStep = step.isFinite ? max(step, 0) : 0
+
+        switch direction {
+        case .left: x -= safeStep
+        case .right: x += safeStep
+        case .up: y -= safeStep
+        case .down: y += safeStep
+        }
+
+        return CGPoint(
+            x: min(max(x, -1), 1),
+            y: min(max(y, -1), 1)
+        )
+    }
+}
+
 struct PanelPresentationState<Metric: Equatable> {
     var visibleDetailsMetric: Metric?
 

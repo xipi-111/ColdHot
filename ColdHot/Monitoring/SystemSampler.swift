@@ -757,6 +757,15 @@ struct ProcessCPUAccounting {
         return elapsedCPUSeconds / elapsedSeconds * 100
     }
 
+    static func wholeMachineUsage(
+        processUsage: Double,
+        logicalProcessorCount: Int
+    ) -> Double {
+        guard processUsage.isFinite else { return 0 }
+        let processorCount = max(logicalProcessorCount, 1)
+        return min(max(processUsage / Double(processorCount), 0), 100)
+    }
+
     static var current: ProcessCPUAccounting {
         var timebase = mach_timebase_info_data_t()
         guard mach_timebase_info(&timebase) == KERN_SUCCESS else {
