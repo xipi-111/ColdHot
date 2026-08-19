@@ -156,7 +156,7 @@ enum SettingsVisualCheck {
                     get: { selection.value },
                     set: { selection.value = $0 }
                 ),
-                versionText: "1.3.1 (17)"
+                versionText: "1.3.1 (18)"
             )
         )
         hostingView.frame = NSRect(x: 0, y: 0, width: 204, height: 680)
@@ -258,6 +258,14 @@ enum SettingsVisualCheck {
             expect(labels.values.contains("菜单面板外观预览"))
             expect(identifiers.values.contains("settings-appearance-preview-column"))
             expect(identifiers.values.contains("settings-appearance-controls-column"))
+        }
+        if page == .about {
+            expect(
+                identifiers.values.contains(
+                    "settings-section-about-1-header-action"
+                )
+            )
+            expect(labels.values.contains("重新检测设备能力"))
         }
 
         // The first configuration owns only the initial default. A later user

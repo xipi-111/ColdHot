@@ -403,7 +403,16 @@ struct SettingsView: View {
 
                 SettingsSectionSurface(
                     "设备能力",
-                    accessibilityIdentifier: "settings-section-about-1"
+                    accessibilityIdentifier: "settings-section-about-1",
+                    headerAccessory: {
+                        Button("重新检测") { monitor.probeCapabilities() }
+                            .font(.caption)
+                            .controlSize(.small)
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(.secondary)
+                            .settingsAccessibilityLabel("重新检测设备能力")
+                            .help("重新检测所有设备能力")
+                    }
                 ) {
                     SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
                         capabilityRow("GPU 实时读数", available: monitor.snapshot.gpu.usage != nil)
@@ -418,13 +427,10 @@ struct SettingsView: View {
                     }
                     SettingsSectionDivider()
                     SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
-                        HStack(spacing: 12) {
-                            capabilityRow(
-                                "系统功率",
-                                available: monitor.snapshot.battery?.systemPowerWatts != nil
-                            )
-                            Button("重新检测") { monitor.probeCapabilities() }
-                        }
+                        capabilityRow(
+                            "系统功率",
+                            available: monitor.snapshot.battery?.systemPowerWatts != nil
+                        )
                     }
                 }
 

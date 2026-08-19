@@ -612,6 +612,7 @@ struct SettingsSectionSurface<Content: View>: View {
     let title: String?
     let footer: String?
     let identifier: String
+    private let headerAccessory: AnyView?
     private let content: Content
 
     @Environment(\.colorScheme) private var colorScheme
@@ -625,14 +626,39 @@ struct SettingsSectionSurface<Content: View>: View {
         self.title = title
         self.footer = footer
         identifier = accessibilityIdentifier
+        headerAccessory = nil
+        self.content = content()
+    }
+
+    init<HeaderAccessory: View>(
+        _ title: String? = nil,
+        footer: String? = nil,
+        accessibilityIdentifier: String,
+        @ViewBuilder headerAccessory: () -> HeaderAccessory,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.footer = footer
+        identifier = accessibilityIdentifier
+        self.headerAccessory = AnyView(
+            headerAccessory()
+                .settingsAccessibilityIdentifier(
+                    "\(accessibilityIdentifier)-header-action"
+                )
+        )
         self.content = content()
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let title {
-                Text(title)
-                    .font(.system(size: 14, weight: .semibold))
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text(title)
+                        .font(.system(size: 14, weight: .semibold))
+                    Spacer(minLength: 0)
+                    headerAccessory
+                }
+                .frame(maxWidth: .infinity)
             }
 
             VStack(alignment: .leading, spacing: 0) {
