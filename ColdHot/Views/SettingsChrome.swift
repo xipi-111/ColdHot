@@ -27,13 +27,6 @@ enum SettingsLayout {
                 upperBound: 720,
                 lowerValue: 42,
                 upperValue: 48
-            ),
-            titleToContentSpacing: interpolated(
-                value: mainViewportSize.height,
-                lowerBound: 680,
-                upperBound: 720,
-                lowerValue: 28,
-                upperValue: 32
             )
         )
     }
@@ -54,7 +47,97 @@ enum SettingsLayout {
 struct SettingsPageMetrics: Equatable {
     let horizontalPadding: CGFloat
     let topPadding: CGFloat
-    let titleToContentSpacing: CGFloat
+}
+
+enum SettingsScrollbarGeometry {
+    static let visibleThumbWidth: CGFloat = 4
+
+    static func visibleThumbRect(in systemKnobRect: CGRect) -> CGRect {
+        guard systemKnobRect.width.isFinite,
+              systemKnobRect.height.isFinite,
+              !systemKnobRect.isNull,
+              !systemKnobRect.isInfinite else {
+            return .zero
+        }
+        let width = min(max(systemKnobRect.width, 0), visibleThumbWidth)
+        return CGRect(
+            x: systemKnobRect.maxX - width,
+            y: systemKnobRect.minY,
+            width: width,
+            height: max(systemKnobRect.height, 0)
+        )
+    }
+}
+
+final class SettingsThinScroller: NSScroller {
+    override class var isCompatibleWithOverlayScrollers: Bool { true }
+
+    override func drawKnob() {
+        let thumbRect = SettingsScrollbarGeometry.visibleThumbRect(
+            in: rect(for: .knob)
+        )
+        guard thumbRect.width > 0, thumbRect.height > 0 else { return }
+
+        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let color = isDark
+            ? NSColor.white.withAlphaComponent(0.58)
+            : NSColor.black.withAlphaComponent(0.42)
+        color.setFill()
+        NSBezierPath(
+            roundedRect: thumbRect,
+            xRadius: SettingsScrollbarGeometry.visibleThumbWidth / 2,
+            yRadius: SettingsScrollbarGeometry.visibleThumbWidth / 2
+        ).fill()
+    }
+
+    override func drawKnobSlot(in slotRect: NSRect, highlight flag: Bool) {}
+}
+
+private struct SettingsScrollViewConfigurator: NSViewRepresentable {
+    func makeNSView(context: Context) -> SettingsScrollViewProbe {
+        SettingsScrollViewProbe()
+    }
+
+    func updateNSView(_ nsView: SettingsScrollViewProbe, context: Context) {
+        nsView.configureEnclosingScrollViewWhenReady()
+    }
+}
+
+private final class SettingsScrollViewProbe: NSView {
+    private var isConfigurationScheduled = false
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        configureEnclosingScrollViewWhenReady()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        configureEnclosingScrollViewWhenReady()
+    }
+
+    func configureEnclosingScrollViewWhenReady() {
+        guard !isConfigurationScheduled else { return }
+        isConfigurationScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.isConfigurationScheduled = false
+            self.configureEnclosingScrollView()
+        }
+    }
+
+    private func configureEnclosingScrollView() {
+        guard let scrollView = enclosingScrollView else { return }
+        scrollView.scrollerStyle = .overlay
+        if !(scrollView.verticalScroller is SettingsThinScroller) {
+            scrollView.verticalScroller = SettingsThinScroller()
+        }
+        scrollView.hasVerticalScroller = true
+        scrollView.verticalScroller?.controlSize = .regular
+        scrollView.verticalScroller?.needsDisplay = true
+    }
 }
 
 enum SettingsAppearanceColumnRole: Equatable {
@@ -572,30 +655,29 @@ struct SettingsPageContent<Content: View>: View {
         GeometryReader { proxy in
             let metrics = SettingsLayout.pageMetrics(mainViewportSize: proxy.size)
 
-            VStack(alignment: .leading, spacing: 0) {
-                Text(page.rawValue)
-                    .font(.system(size: 34, weight: .bold))
-                    .padding(.bottom, metrics.titleToContentSpacing)
-                pageBody
-            }
+            pageBody(metrics: metrics)
             .padding(.top, metrics.topPadding)
-            .padding(.horizontal, metrics.horizontalPadding)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .accessibilityElement(children: .contain)
+        .settingsAccessibilityLabel(page.rawValue)
         .settingsAccessibilityIdentifier("settings-page-\(page.slug)")
     }
 
     @ViewBuilder
-    private var pageBody: some View {
+    private func pageBody(metrics: SettingsPageMetrics) -> some View {
         if page.requiresScrolling {
             ScrollView {
                 contentStack
+                    .padding(.horizontal, metrics.horizontalPadding)
                     .padding(.bottom, 32)
+                    .background(SettingsScrollViewConfigurator())
             }
             .scrollIndicators(.automatic)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         } else {
             contentStack
+                .padding(.horizontal, metrics.horizontalPadding)
                 .frame(maxHeight: .infinity, alignment: .topLeading)
         }
     }

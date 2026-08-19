@@ -31,19 +31,22 @@ enum SettingsVisualCheck {
         expect(SettingsLayout.standardRowHeight == 48)
         expect(SettingsLayout.sliderRowHeight == 64)
         expect(SettingsLayout.compactRowHeight == 40)
+        let systemKnobRect = CGRect(x: 0, y: 10, width: 17, height: 100)
+        expect(
+            SettingsScrollbarGeometry.visibleThumbRect(in: systemKnobRect)
+                == CGRect(x: 13, y: 10, width: 4, height: 100)
+        )
 
         let defaultPageMetrics = SettingsLayout.pageMetrics(
             mainViewportSize: CGSize(width: 716, height: 720)
         )
         expect(defaultPageMetrics.horizontalPadding == 34)
         expect(defaultPageMetrics.topPadding == 48)
-        expect(defaultPageMetrics.titleToContentSpacing == 32)
         let minimumPageMetrics = SettingsLayout.pageMetrics(
             mainViewportSize: CGSize(width: 656, height: 680)
         )
         expect(minimumPageMetrics.horizontalPadding == 30)
         expect(minimumPageMetrics.topPadding == 42)
-        expect(minimumPageMetrics.titleToContentSpacing == 28)
 
         let defaultColumns = SettingsAppearanceColumns.resolve(contentWidth: 648)
         expect(defaultColumns.order == [.preview, .controls])
@@ -156,7 +159,7 @@ enum SettingsVisualCheck {
                     get: { selection.value },
                     set: { selection.value = $0 }
                 ),
-                versionText: "1.3.1 (18)"
+                versionText: "1.3.2 (19)"
             )
         )
         hostingView.frame = NSRect(x: 0, y: 0, width: 204, height: 680)
@@ -254,6 +257,7 @@ enum SettingsVisualCheck {
         expect(identifiers.values.contains("settings-sidebar"))
         expect(identifiers.values.contains("settings-page-\(page.slug)"))
         expect(identifiers.values.contains(firstSectionIdentifier(for: page)))
+        expect(labels.values.contains(page.rawValue))
         if page == .appearance {
             expect(labels.values.contains("菜单面板外观预览"))
             expect(identifiers.values.contains("settings-appearance-preview-column"))
@@ -300,6 +304,20 @@ enum SettingsVisualCheck {
         hostingView.layoutSubtreeIfNeeded()
         RunLoop.main.run(until: Date().addingTimeInterval(0.1))
         expect(window.contentView?.bounds.size == size)
+        if page.requiresScrolling {
+            let scrollViews = descendants(of: hostingView).compactMap { $0 as? NSScrollView }
+            guard let pageScrollView = scrollViews.max(by: {
+                $0.bounds.width * $0.bounds.height < $1.bounds.width * $1.bounds.height
+            }) else {
+                fatalError("Missing settings page scroll view")
+            }
+            let frameInHostingView = pageScrollView.convert(
+                pageScrollView.bounds,
+                to: hostingView
+            )
+            expect(abs(frameInHostingView.maxX - hostingView.bounds.maxX) < 0.5)
+            expect(pageScrollView.verticalScroller is SettingsThinScroller)
+        }
 
         // This PNG intentionally caches only SwiftUI content. Actual traffic
         // lights, titlebar composition, and backdrop-dependent sidebar glass
@@ -310,6 +328,16 @@ enum SettingsVisualCheck {
             fatalError("Unable to create settings preview")
         }
         hostingView.cacheDisplay(in: hostingView.bounds, to: bitmap)
+        if page == .about,
+           appearance == .darkAqua,
+           size == SettingsLayout.defaultContentSize {
+            let brightPixels = brightPixelCount(
+                inTopOriginRect: CGRect(x: 220, y: 38, width: 300, height: 62),
+                bitmap: bitmap,
+                logicalSize: hostingView.bounds.size
+            )
+            expect(brightPixels < 1_800)
+        }
         guard let data = bitmap.representation(using: .png, properties: [:]) else {
             fatalError("Unable to encode settings preview")
         }
@@ -335,6 +363,36 @@ enum SettingsVisualCheck {
             return "settings-section-general-2"
         }
         return "settings-section-\(page.slug)-0"
+    }
+
+    private static func brightPixelCount(
+        inTopOriginRect rect: CGRect,
+        bitmap: NSBitmapImageRep,
+        logicalSize: CGSize
+    ) -> Int {
+        guard logicalSize.width > 0, logicalSize.height > 0 else { return 0 }
+        let scaleX = CGFloat(bitmap.pixelsWide) / logicalSize.width
+        let scaleY = CGFloat(bitmap.pixelsHigh) / logicalSize.height
+        let minX = max(0, Int((rect.minX * scaleX).rounded(.down)))
+        let maxX = min(bitmap.pixelsWide, Int((rect.maxX * scaleX).rounded(.up)))
+        let topY = max(0, Int((rect.minY * scaleY).rounded(.down)))
+        let bottomY = min(bitmap.pixelsHigh, Int((rect.maxY * scaleY).rounded(.up)))
+        var count = 0
+
+        for topOriginY in topY..<bottomY {
+            let bitmapY = bitmap.pixelsHigh - 1 - topOriginY
+            for x in minX..<maxX {
+                guard let color = bitmap.colorAt(x: x, y: bitmapY)?.usingColorSpace(.deviceRGB)
+                else { continue }
+                if color.alphaComponent > 0.5,
+                   color.redComponent > 0.65,
+                   color.greenComponent > 0.65,
+                   color.blueComponent > 0.65 {
+                    count += 1
+                }
+            }
+        }
+        return count
     }
 }
 
