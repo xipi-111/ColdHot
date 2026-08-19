@@ -93,6 +93,18 @@ final class SettingsThinScroller: NSScroller {
     override func drawKnobSlot(in slotRect: NSRect, highlight flag: Bool) {}
 }
 
+enum SettingsScrollbarConfiguration {
+    static func apply(to scrollView: NSScrollView) {
+        if !(scrollView.verticalScroller is SettingsThinScroller) {
+            scrollView.verticalScroller = SettingsThinScroller()
+        }
+        scrollView.hasVerticalScroller = true
+        scrollView.verticalScroller?.controlSize = .regular
+        scrollView.verticalScroller?.needsDisplay = true
+        scrollView.tile()
+    }
+}
+
 private struct SettingsScrollViewConfigurator: NSViewRepresentable {
     func makeNSView(context: Context) -> SettingsScrollViewProbe {
         SettingsScrollViewProbe()
@@ -130,13 +142,7 @@ private final class SettingsScrollViewProbe: NSView {
 
     private func configureEnclosingScrollView() {
         guard let scrollView = enclosingScrollView else { return }
-        scrollView.scrollerStyle = .overlay
-        if !(scrollView.verticalScroller is SettingsThinScroller) {
-            scrollView.verticalScroller = SettingsThinScroller()
-        }
-        scrollView.hasVerticalScroller = true
-        scrollView.verticalScroller?.controlSize = .regular
-        scrollView.verticalScroller?.needsDisplay = true
+        SettingsScrollbarConfiguration.apply(to: scrollView)
     }
 }
 

@@ -36,6 +36,27 @@ enum SettingsVisualCheck {
             SettingsScrollbarGeometry.visibleThumbRect(in: systemKnobRect)
                 == CGRect(x: 13, y: 10, width: 4, height: 100)
         )
+        let stylePreservationScrollView = NSScrollView(
+            frame: CGRect(x: 0, y: 0, width: 300, height: 300)
+        )
+        stylePreservationScrollView.scrollerStyle = .legacy
+        stylePreservationScrollView.autohidesScrollers = false
+        stylePreservationScrollView.documentView = NSView(
+            frame: CGRect(x: 0, y: 0, width: 300, height: 600)
+        )
+        SettingsScrollbarConfiguration.apply(to: stylePreservationScrollView)
+        stylePreservationScrollView.layoutSubtreeIfNeeded()
+        expect(stylePreservationScrollView.scrollerStyle == .legacy)
+        expect(stylePreservationScrollView.verticalScroller is SettingsThinScroller)
+        guard let configuredScroller = stylePreservationScrollView.verticalScroller else {
+            fatalError("Missing configured settings scroller")
+        }
+        expect(
+            abs(
+                configuredScroller.bounds.width
+                    - NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy)
+            ) < 0.5
+        )
 
         let defaultPageMetrics = SettingsLayout.pageMetrics(
             mainViewportSize: CGSize(width: 716, height: 720)
