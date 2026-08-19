@@ -26,13 +26,53 @@ enum SettingsVisualCheck {
         expect(SettingsLayout.defaultContentSize == CGSize(width: 920, height: 720))
         expect(SettingsLayout.minimumContentSize == CGSize(width: 860, height: 680))
         expect(SettingsLayout.sidebarWidth == 204)
+        expect(SettingsLayout.sectionCornerRadius == 14)
+        expect(SettingsLayout.sidebarSelectionCornerRadius == 10)
+        expect(SettingsLayout.standardRowHeight == 48)
+        expect(SettingsLayout.sliderRowHeight == 64)
+        expect(SettingsLayout.compactRowHeight == 40)
+
+        let defaultPageMetrics = SettingsLayout.pageMetrics(
+            mainViewportSize: CGSize(width: 716, height: 720)
+        )
+        expect(defaultPageMetrics.horizontalPadding == 34)
+        expect(defaultPageMetrics.topPadding == 48)
+        expect(defaultPageMetrics.titleToContentSpacing == 32)
+        let minimumPageMetrics = SettingsLayout.pageMetrics(
+            mainViewportSize: CGSize(width: 656, height: 680)
+        )
+        expect(minimumPageMetrics.horizontalPadding == 30)
+        expect(minimumPageMetrics.topPadding == 42)
+        expect(minimumPageMetrics.titleToContentSpacing == 28)
+
+        let defaultColumns = SettingsAppearanceColumns.resolve(contentWidth: 648)
+        expect(defaultColumns.order == [.preview, .controls])
+        expect(defaultColumns.previewWidth == 328)
+        expect(defaultColumns.controlsWidth == 300)
+        expect(defaultColumns.spacing == 20)
+        expect(defaultColumns.previewHeight == 520)
+        let minimumColumns = SettingsAppearanceColumns.resolve(contentWidth: 596)
+        expect(minimumColumns.order == [.preview, .controls])
+        expect(minimumColumns.previewWidth == 304)
+        expect(minimumColumns.controlsWidth == 276)
+        expect(minimumColumns.spacing == 16)
+        expect(minimumColumns.previewHeight == 488)
         expect(PanelLayout.width == 370)
         expect(SettingsPreviewScale.factor(contentWidth: 370, availableWidth: 370) == 1)
         expect(abs(SettingsPreviewScale.factor(contentWidth: 370, availableWidth: 296) - 0.8) < 0.0001)
         expect(SettingsPreviewScale.factor(contentWidth: 370, availableWidth: 500) == 1)
+        expect(abs(SettingsPreviewScale.factor(
+            contentSize: CGSize(width: 370, height: 650),
+            availableSize: CGSize(width: 328, height: 520)
+        ) - 0.8) < 0.0001)
         expect(SettingsPage.allCases.map(\.rawValue) == [
             "外观", "指标", "阈值提醒", "通用", "关于"
         ])
+        expect(!SettingsPage.appearance.requiresScrolling)
+        expect(SettingsPage.metrics.requiresScrolling)
+        expect(SettingsPage.alerts.requiresScrolling)
+        expect(!SettingsPage.general.requiresScrolling)
+        expect(!SettingsPage.about.requiresScrolling)
         expect(SettingsSidebarSelection.move(from: .appearance, direction: .up) == .about)
         expect(SettingsSidebarSelection.move(from: .about, direction: .down) == .appearance)
         expect(SettingsSidebarSelection.move(from: .metrics, direction: .down) == .alerts)
@@ -54,6 +94,9 @@ enum SettingsVisualCheck {
                 "coldhot-settings-visual-\(UUID().uuidString)",
                 isDirectory: true
             )
+        )
+        try backgroundStore.importImage(
+            from: URL(fileURLWithPath: "Artwork/ColdHot-AppIcon-Pulse-Source.png")
         )
 
         let outputDirectory = CommandLine.arguments.dropFirst().first
@@ -211,6 +254,8 @@ enum SettingsVisualCheck {
         expect(identifiers.values.contains(firstSectionIdentifier(for: page)))
         if page == .appearance {
             expect(labels.values.contains("菜单面板外观预览"))
+            expect(identifiers.values.contains("settings-appearance-preview-column"))
+            expect(identifiers.values.contains("settings-appearance-controls-column"))
         }
 
         // The first configuration owns only the initial default. A later user

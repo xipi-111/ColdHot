@@ -91,71 +91,81 @@ struct SettingsView: View {
 
     private var appearancePage: some View {
         SettingsPageContent(page: .appearance) {
-            HStack(alignment: .top, spacing: 24) {
-                VStack(alignment: .leading, spacing: SettingsLayout.sectionSpacing) {
-                    SettingsSectionSurface(
-                        "面板背景与可读性",
-                        footer: "图片会压缩后保存在本机，不会上传，也不会在指标刷新时重复读取。",
-                        accessibilityIdentifier: "settings-section-appearance-0"
-                    ) {
-                        panelBackgroundSettings
-                    }
+            GeometryReader { proxy in
+                let columns = SettingsAppearanceColumns.resolve(
+                    contentWidth: proxy.size.width
+                )
 
-                    if hasLowReadability {
+                HStack(alignment: .top, spacing: columns.spacing) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("菜单面板真实范围")
+                            .font(.system(size: 14, weight: .semibold))
+                        ScaledSettingsPreview(maximumHeight: columns.previewHeight) {
+                            PanelAppearancePreview(
+                                image: panelBackgroundStore.image,
+                                isBackgroundEnabled: settings.isPanelBackgroundEnabled,
+                                dimOpacity: settings.panelBackgroundDimOpacity,
+                                cardOpacity: settings.panelCardOpacity,
+                                primaryTextOpacity: settings.panelPrimaryTextOpacity,
+                                secondaryTextOpacity: settings.panelSecondaryTextOpacity,
+                                progressOpacity: settings.panelProgressOpacity,
+                                enabledMetrics: previewEnabledMetrics,
+                                showsDockQuickControl: settings.showDockQuickControl
+                            )
+                            .settingsAccessibilityLabel("菜单面板外观预览")
+                        }
+                        .clipShape(
+                            RoundedRectangle(
+                                cornerRadius: SettingsLayout.sectionCornerRadius,
+                                style: .continuous
+                            )
+                        )
+                        .overlay {
+                            RoundedRectangle(
+                                cornerRadius: SettingsLayout.sectionCornerRadius,
+                                style: .continuous
+                            )
+                            .stroke(.quaternary, lineWidth: 1)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
+                    }
+                    .frame(width: columns.previewWidth, alignment: .topLeading)
+                    .settingsAccessibilityIdentifier("settings-appearance-preview-column")
+
+                    VStack(alignment: .leading, spacing: SettingsLayout.sectionSpacing) {
                         SettingsSectionSurface(
-                            accessibilityIdentifier: "settings-section-appearance-1"
+                            "面板背景与可读性",
+                            accessibilityIdentifier: "settings-section-appearance-0"
                         ) {
-                            SettingsRow {
-                                Label(
-                                    "当前组合可能使文字或进度条难以辨认。",
-                                    systemImage: "exclamationmark.triangle.fill"
-                                )
-                                .foregroundStyle(.orange)
-                            }
-                            SettingsSectionDivider()
-                            SettingsRow {
-                                Button("恢复推荐可读性") {
-                                    settings.restoreRecommendedReadability()
+                            panelBackgroundSettings(
+                                sliderRowHeight: columns.sliderRowHeight
+                            )
+                        }
+
+                        if hasLowReadability {
+                            SettingsSectionSurface(
+                                accessibilityIdentifier: "settings-section-appearance-1"
+                            ) {
+                                SettingsRow {
+                                    Label(
+                                        "当前组合可能使文字或进度条难以辨认。",
+                                        systemImage: "exclamationmark.triangle.fill"
+                                    )
+                                    .foregroundStyle(.orange)
+                                }
+                                SettingsSectionDivider()
+                                SettingsRow {
+                                    Button("恢复推荐可读性") {
+                                        settings.restoreRecommendedReadability()
+                                    }
                                 }
                             }
                         }
                     }
+                    .frame(width: columns.controlsWidth, alignment: .topLeading)
+                    .settingsAccessibilityIdentifier("settings-appearance-controls-column")
                 }
-                .frame(minWidth: 268, maxWidth: .infinity, alignment: .topLeading)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("菜单面板真实范围")
-                        .font(.headline)
-                    ScaledSettingsPreview {
-                        PanelAppearancePreview(
-                            image: panelBackgroundStore.image,
-                            isBackgroundEnabled: settings.isPanelBackgroundEnabled,
-                            dimOpacity: settings.panelBackgroundDimOpacity,
-                            cardOpacity: settings.panelCardOpacity,
-                            primaryTextOpacity: settings.panelPrimaryTextOpacity,
-                            secondaryTextOpacity: settings.panelSecondaryTextOpacity,
-                            progressOpacity: settings.panelProgressOpacity,
-                            enabledMetrics: previewEnabledMetrics,
-                            showsDockQuickControl: settings.showDockQuickControl
-                        )
-                        .settingsAccessibilityLabel("菜单面板外观预览")
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(.quaternary, lineWidth: 1)
-                    }
-                    Text("使用与菜单面板相同的 370px 画布、卡片高度和图片裁切。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(
-                    minWidth: 296,
-                    idealWidth: 320,
-                    maxWidth: 320,
-                    alignment: .topLeading
-                )
-                .layoutPriority(1)
+                .frame(width: proxy.size.width, alignment: .topLeading)
             }
         }
     }
@@ -350,87 +360,84 @@ struct SettingsView: View {
 
     private var aboutPage: some View {
         SettingsPageContent(page: .about) {
-            SettingsSectionSurface(
-                "版本",
-                accessibilityIdentifier: "settings-section-about-0"
-            ) {
-                SettingsRow {
-                    LabeledContent("发行渠道", value: BuildVariant.displayName)
-                }
-                SettingsSectionDivider()
-                SettingsRow {
-                    LabeledContent("当前版本", value: currentVersionText)
-                }
-                if BuildVariant.channel == .direct {
+            VStack(alignment: .leading, spacing: 16) {
+                SettingsSectionSurface(
+                    "版本",
+                    accessibilityIdentifier: "settings-section-about-0"
+                ) {
+                    SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
+                        settingsValueRow("发行渠道", value: BuildVariant.displayName)
+                    }
                     SettingsSectionDivider()
-                    SettingsRow {
-                        Button("检查更新…") { updateController.checkForUpdates() }
+                    SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
+                        settingsValueRow("当前版本", value: currentVersionText)
+                    }
+                    SettingsSectionDivider()
+                    SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
+                        HStack(spacing: 12) {
+                            if BuildVariant.channel == .direct {
+                                Button("检查更新…") {
+                                    updateController.checkForUpdates()
+                                }
+                            }
+                            Button("隐私政策") { showsPrivacyPolicy = true }
+                        }
                     }
                 }
-                SettingsSectionDivider()
-                SettingsRow {
-                    Button("隐私政策") { showsPrivacyPolicy = true }
-                }
-            }
 
-            SettingsSectionSurface(
-                "设备能力",
-                accessibilityIdentifier: "settings-section-about-1"
-            ) {
-                SettingsRow {
-                    capabilityRow("GPU 实时读数", available: monitor.snapshot.gpu.usage != nil)
+                SettingsSectionSurface(
+                    "设备能力",
+                    accessibilityIdentifier: "settings-section-about-1"
+                ) {
+                    SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
+                        capabilityRow("GPU 实时读数", available: monitor.snapshot.gpu.usage != nil)
+                    }
+                    SettingsSectionDivider()
+                    SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
+                        capabilityRow("风扇转速", available: !monitor.snapshot.fans.isEmpty)
+                    }
+                    SettingsSectionDivider()
+                    SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
+                        capabilityRow("温度传感器", available: hasTemperatureReading)
+                    }
+                    SettingsSectionDivider()
+                    SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
+                        HStack(spacing: 12) {
+                            capabilityRow(
+                                "系统功率",
+                                available: monitor.snapshot.battery?.systemPowerWatts != nil
+                            )
+                            Button("重新检测") { monitor.probeCapabilities() }
+                        }
+                    }
                 }
-                SettingsSectionDivider()
-                SettingsRow {
-                    capabilityRow("风扇转速", available: !monitor.snapshot.fans.isEmpty)
-                }
-                SettingsSectionDivider()
-                SettingsRow {
-                    capabilityRow("温度传感器", available: hasTemperatureReading)
-                }
-                SettingsSectionDivider()
-                SettingsRow {
-                    capabilityRow(
-                        "系统功率",
-                        available: monitor.snapshot.battery?.systemPowerWatts != nil
-                    )
-                }
-                SettingsSectionDivider()
-                SettingsRow {
-                    Button("重新检测") { monitor.probeCapabilities() }
-                }
-            }
 
-            SettingsSectionSurface(
-                "ColdHot 运行影响",
-                accessibilityIdentifier: "settings-section-about-2"
-            ) {
-                SettingsRow {
-                    LabeledContent(
-                        "CPU",
-                        value: monitor.selfResourceSnapshot.cpuUsage.formatted(
-                            .number.precision(.fractionLength(1))
-                        ) + "%"
-                    )
-                }
-                SettingsSectionDivider()
-                SettingsRow {
-                    LabeledContent("内存", value: selfMemoryText)
-                }
-                SettingsSectionDivider()
-                SettingsRow {
-                    LabeledContent(
-                        "唤醒",
-                        value: monitor.selfResourceSnapshot.wakeupsPerSecond.formatted(
-                            .number.precision(.fractionLength(1))
-                        ) + " 次/秒"
-                    )
-                }
-                SettingsSectionDivider()
-                SettingsRow {
-                    Text("该区域每约 5 秒更新，用于确认监控工具自身的资源开销。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                SettingsSectionSurface(
+                    "ColdHot 运行影响",
+                    footer: "该区域每约 5 秒更新，用于确认监控工具自身的资源开销。",
+                    accessibilityIdentifier: "settings-section-about-2"
+                ) {
+                    SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
+                        settingsValueRow(
+                            "CPU",
+                            value: monitor.selfResourceSnapshot.cpuUsage.formatted(
+                                .number.precision(.fractionLength(1))
+                            ) + "%"
+                        )
+                    }
+                    SettingsSectionDivider()
+                    SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
+                        settingsValueRow("内存", value: selfMemoryText)
+                    }
+                    SettingsSectionDivider()
+                    SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
+                        settingsValueRow(
+                            "唤醒",
+                            value: monitor.selfResourceSnapshot.wakeupsPerSecond.formatted(
+                                .number.precision(.fractionLength(1))
+                            ) + " 次/秒"
+                        )
+                    }
                 }
             }
         }
@@ -438,7 +445,7 @@ struct SettingsView: View {
     }
 
     @ViewBuilder
-    private var panelBackgroundSettings: some View {
+    private func panelBackgroundSettings(sliderRowHeight: CGFloat) -> some View {
         if panelBackgroundStore.image != nil {
             SettingsRow {
                 HStack(spacing: 10) {
@@ -458,7 +465,7 @@ struct SettingsView: View {
                 )
             }
             SettingsSectionDivider()
-            SettingsRow {
+            SettingsRow(minHeight: sliderRowHeight) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         Text("深色遮罩")
@@ -476,7 +483,7 @@ struct SettingsView: View {
                 }
             }
             SettingsSectionDivider()
-            SettingsRow {
+            SettingsRow(minHeight: sliderRowHeight) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         Text("卡片不透明度")
@@ -494,7 +501,7 @@ struct SettingsView: View {
                 }
             }
             SettingsSectionDivider()
-            SettingsRow {
+            SettingsRow(minHeight: sliderRowHeight) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         Text("主文字亮度")
@@ -512,7 +519,7 @@ struct SettingsView: View {
                 }
             }
             SettingsSectionDivider()
-            SettingsRow {
+            SettingsRow(minHeight: sliderRowHeight) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         Text("辅助文字亮度")
@@ -530,7 +537,7 @@ struct SettingsView: View {
                 }
             }
             SettingsSectionDivider()
-            SettingsRow {
+            SettingsRow(minHeight: sliderRowHeight) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         Text("进度条透明度")
@@ -548,12 +555,16 @@ struct SettingsView: View {
                 }
             }
             SettingsSectionDivider()
-            SettingsRow {
+            SettingsRow(minHeight: 40) {
                 HStack {
+                    Text("图片仅保存在本机")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     Spacer()
-                    Button("移除背景", role: .destructive) {
+                    Button("移除", role: .destructive) {
                         removeBackgroundImage()
                     }
+                    .buttonStyle(.plain)
                 }
             }
         } else {
@@ -699,6 +710,14 @@ struct SettingsView: View {
             )
             .font(.caption)
             .foregroundStyle(available ? Color.green : Color.secondary)
+        }
+    }
+
+    private func settingsValueRow(_ title: String, value: String) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text(value)
         }
     }
 

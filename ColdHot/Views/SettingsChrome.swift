@@ -5,16 +5,129 @@ enum SettingsLayout {
     static let defaultContentSize = CGSize(width: 920, height: 720)
     static let minimumContentSize = CGSize(width: 860, height: 680)
     static let sidebarWidth: CGFloat = 204
-    static let pageHorizontalPadding: CGFloat = 34
-    static let pageTopPadding: CGFloat = 48
     static let sectionSpacing: CGFloat = 24
-    static let rowHeight: CGFloat = 40
+    static let standardRowHeight: CGFloat = 48
+    static let sliderRowHeight: CGFloat = 64
+    static let compactRowHeight: CGFloat = 40
+    static let sectionCornerRadius: CGFloat = 14
+    static let sidebarSelectionCornerRadius: CGFloat = 10
+
+    static func pageMetrics(mainViewportSize: CGSize) -> SettingsPageMetrics {
+        SettingsPageMetrics(
+            horizontalPadding: interpolated(
+                value: mainViewportSize.width,
+                lowerBound: 656,
+                upperBound: 716,
+                lowerValue: 30,
+                upperValue: 34
+            ),
+            topPadding: interpolated(
+                value: mainViewportSize.height,
+                lowerBound: 680,
+                upperBound: 720,
+                lowerValue: 42,
+                upperValue: 48
+            ),
+            titleToContentSpacing: interpolated(
+                value: mainViewportSize.height,
+                lowerBound: 680,
+                upperBound: 720,
+                lowerValue: 28,
+                upperValue: 32
+            )
+        )
+    }
+
+    static func interpolated(
+        value: CGFloat,
+        lowerBound: CGFloat,
+        upperBound: CGFloat,
+        lowerValue: CGFloat,
+        upperValue: CGFloat
+    ) -> CGFloat {
+        guard upperBound > lowerBound else { return lowerValue }
+        let progress = min(1, max(0, (value - lowerBound) / (upperBound - lowerBound)))
+        return lowerValue + (upperValue - lowerValue) * progress
+    }
+}
+
+struct SettingsPageMetrics: Equatable {
+    let horizontalPadding: CGFloat
+    let topPadding: CGFloat
+    let titleToContentSpacing: CGFloat
+}
+
+enum SettingsAppearanceColumnRole: Equatable {
+    case preview
+    case controls
+}
+
+struct SettingsAppearanceColumns: Equatable {
+    let order: [SettingsAppearanceColumnRole]
+    let previewWidth: CGFloat
+    let controlsWidth: CGFloat
+    let spacing: CGFloat
+    let sliderRowHeight: CGFloat
+    let previewHeight: CGFloat
+
+    static func resolve(contentWidth: CGFloat) -> SettingsAppearanceColumns {
+        let spacing = SettingsLayout.interpolated(
+            value: contentWidth,
+            lowerBound: 596,
+            upperBound: 648,
+            lowerValue: 16,
+            upperValue: 20
+        )
+        let controlsWidth = SettingsLayout.interpolated(
+            value: contentWidth,
+            lowerBound: 596,
+            upperBound: 648,
+            lowerValue: 276,
+            upperValue: 300
+        )
+        let sliderRowHeight = SettingsLayout.interpolated(
+            value: contentWidth,
+            lowerBound: 596,
+            upperBound: 648,
+            lowerValue: 56,
+            upperValue: SettingsLayout.sliderRowHeight
+        )
+        let previewHeight = SettingsLayout.interpolated(
+            value: contentWidth,
+            lowerBound: 596,
+            upperBound: 648,
+            lowerValue: 488,
+            upperValue: 520
+        )
+        return SettingsAppearanceColumns(
+            order: [.preview, .controls],
+            previewWidth: max(0, contentWidth - spacing - controlsWidth),
+            controlsWidth: controlsWidth,
+            spacing: spacing,
+            sliderRowHeight: sliderRowHeight,
+            previewHeight: previewHeight
+        )
+    }
 }
 
 enum SettingsPreviewScale {
     static func factor(contentWidth: CGFloat, availableWidth: CGFloat) -> CGFloat {
         guard contentWidth > 0 else { return 1 }
         return min(1, max(0, availableWidth / contentWidth))
+    }
+
+    static func factor(contentSize: CGSize, availableSize: CGSize) -> CGFloat {
+        guard contentSize.width > 0, contentSize.height > 0 else { return 1 }
+        return min(
+            1,
+            max(
+                0,
+                min(
+                    availableSize.width / contentSize.width,
+                    availableSize.height / contentSize.height
+                )
+            )
+        )
     }
 }
 
@@ -41,16 +154,25 @@ struct ScaledSettingsPreview<Content: View>: View {
     @State private var logicalSize = CGSize.zero
     @State private var availableWidth: CGFloat = 0
     private let content: Content
+    private let maximumHeight: CGFloat?
 
-    init(@ViewBuilder content: () -> Content) {
+    init(maximumHeight: CGFloat? = nil, @ViewBuilder content: () -> Content) {
+        self.maximumHeight = maximumHeight
         self.content = content()
     }
 
     private var scale: CGFloat {
-        SettingsPreviewScale.factor(
-            contentWidth: logicalSize.width,
-            availableWidth: availableWidth
-        )
+        if let maximumHeight {
+            SettingsPreviewScale.factor(
+                contentSize: logicalSize,
+                availableSize: CGSize(width: availableWidth, height: maximumHeight)
+            )
+        } else {
+            SettingsPreviewScale.factor(
+                contentWidth: logicalSize.width,
+                availableWidth: availableWidth
+            )
+        }
     }
 
     private var presentedSize: CGSize {
@@ -59,7 +181,7 @@ struct ScaledSettingsPreview<Content: View>: View {
 
     var body: some View {
         GeometryReader { proxy in
-            ZStack(alignment: .topLeading) {
+            ZStack(alignment: .top) {
                 Color.clear.preference(
                     key: SettingsPreviewAvailableWidthKey.self,
                     value: proxy.size.width
@@ -84,10 +206,9 @@ struct ScaledSettingsPreview<Content: View>: View {
             }
         }
         .frame(
-            maxWidth: logicalSize.width > 0 ? logicalSize.width : .infinity,
-            alignment: .leading
+            width: logicalSize == .zero ? nil : presentedSize.width,
+            height: logicalSize == .zero ? nil : presentedSize.height
         )
-        .frame(height: logicalSize == .zero ? nil : presentedSize.height)
         .onPreferenceChange(SettingsPreviewLogicalSizeKey.self) { logicalSize = $0 }
         .onPreferenceChange(SettingsPreviewAvailableWidthKey.self) { availableWidth = $0 }
     }
@@ -120,6 +241,10 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         case .general: "gearshape"
         case .about: "info.circle"
         }
+    }
+
+    var requiresScrolling: Bool {
+        self == .metrics || self == .alerts
     }
 }
 
@@ -256,11 +381,17 @@ private struct SettingsSidebarRowStyleBody: View {
             .contentShape(Rectangle())
             .background(
                 Color.primary.opacity(backgroundOpacity),
-                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                in: RoundedRectangle(
+                    cornerRadius: SettingsLayout.sidebarSelectionCornerRadius,
+                    style: .continuous
+                )
             )
             .overlay {
                 if isFocused {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    RoundedRectangle(
+                        cornerRadius: SettingsLayout.sidebarSelectionCornerRadius,
+                        style: .continuous
+                    )
                         .stroke(
                             Color.primary.opacity(isWindowActive ? 0.46 : 0.26),
                             lineWidth: 2
@@ -289,7 +420,7 @@ struct SettingsSidebar: View {
                 .padding(.top, 50)
                 .padding(.bottom, 6)
 
-            VStack(spacing: 2) {
+            VStack(spacing: 4) {
                 ForEach(SettingsPage.allCases) { page in
                     sidebarButton(for: page)
                 }
@@ -438,24 +569,42 @@ struct SettingsPageContent<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(page.rawValue)
-                .font(.system(size: 34, weight: .bold))
-                .padding(.bottom, 28)
-            ScrollView {
-                VStack(alignment: .leading, spacing: SettingsLayout.sectionSpacing) {
-                    content
-                }
-                .frame(maxWidth: 660, alignment: .leading)
-                .padding(.bottom, 32)
+        GeometryReader { proxy in
+            let metrics = SettingsLayout.pageMetrics(mainViewportSize: proxy.size)
+
+            VStack(alignment: .leading, spacing: 0) {
+                Text(page.rawValue)
+                    .font(.system(size: 34, weight: .bold))
+                    .padding(.bottom, metrics.titleToContentSpacing)
+                pageBody
             }
-            .scrollIndicators(.hidden)
+            .padding(.top, metrics.topPadding)
+            .padding(.horizontal, metrics.horizontalPadding)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .padding(.top, SettingsLayout.pageTopPadding)
-        .padding(.horizontal, SettingsLayout.pageHorizontalPadding)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .accessibilityElement(children: .contain)
         .settingsAccessibilityIdentifier("settings-page-\(page.slug)")
+    }
+
+    @ViewBuilder
+    private var pageBody: some View {
+        if page.requiresScrolling {
+            ScrollView {
+                contentStack
+                    .padding(.bottom, 32)
+            }
+            .scrollIndicators(.automatic)
+        } else {
+            contentStack
+                .frame(maxHeight: .infinity, alignment: .topLeading)
+        }
+    }
+
+    private var contentStack: some View {
+        VStack(alignment: .leading, spacing: SettingsLayout.sectionSpacing) {
+            content
+        }
+        .frame(maxWidth: 660, alignment: .leading)
     }
 }
 
@@ -483,7 +632,7 @@ struct SettingsSectionSurface<Content: View>: View {
         VStack(alignment: .leading, spacing: 8) {
             if let title {
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
             }
 
             VStack(alignment: .leading, spacing: 0) {
@@ -492,9 +641,17 @@ struct SettingsSectionSurface<Content: View>: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 surfaceColor,
-                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                in: RoundedRectangle(
+                    cornerRadius: SettingsLayout.sectionCornerRadius,
+                    style: .continuous
+                )
             )
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .clipShape(
+                RoundedRectangle(
+                    cornerRadius: SettingsLayout.sectionCornerRadius,
+                    style: .continuous
+                )
+            )
 
             if let footer {
                 Text(footer)
@@ -516,9 +673,14 @@ struct SettingsSectionSurface<Content: View>: View {
 }
 
 struct SettingsRow<Content: View>: View {
+    let minHeight: CGFloat
     private let content: Content
 
-    init(@ViewBuilder content: () -> Content) {
+    init(
+        minHeight: CGFloat = SettingsLayout.standardRowHeight,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.minHeight = minHeight
         self.content = content()
     }
 
@@ -526,7 +688,7 @@ struct SettingsRow<Content: View>: View {
         content
             .frame(
                 maxWidth: .infinity,
-                minHeight: SettingsLayout.rowHeight,
+                minHeight: minHeight,
                 alignment: .leading
             )
             .padding(.horizontal, 14)
