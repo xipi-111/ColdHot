@@ -14,6 +14,8 @@ struct SettingsView: View {
     @State private var isChoosingBackground = false
     @State private var backgroundErrorMessage: String?
     @State private var notificationAuthorizationDenied = false
+    @State private var backgroundDragStartPosition: CGPoint?
+    @FocusState private var isBackgroundPreviewFocused: Bool
 
     init(
         settings: MonitorSettings,
@@ -105,6 +107,8 @@ struct SettingsView: View {
                                 image: panelBackgroundStore.image,
                                 isBackgroundEnabled: settings.isPanelBackgroundEnabled,
                                 dimOpacity: settings.panelBackgroundDimOpacity,
+                                backgroundZoom: settings.panelBackgroundZoom,
+                                backgroundPosition: panelBackgroundPosition,
                                 cardOpacity: settings.panelCardOpacity,
                                 primaryTextOpacity: settings.panelPrimaryTextOpacity,
                                 secondaryTextOpacity: settings.panelSecondaryTextOpacity,
@@ -127,7 +131,20 @@ struct SettingsView: View {
                             )
                             .stroke(.quaternary, lineWidth: 1)
                         }
+                        .overlay {
+                            GeometryReader { previewProxy in
+                                backgroundAdjustmentOverlay(size: previewProxy.size)
+                            }
+                        }
                         .frame(maxWidth: .infinity, alignment: .center)
+
+                        if settings.isPanelBackgroundEnabled,
+                           panelBackgroundStore.hasImage {
+                            Text("拖动预览调整图片位置，方向键可微调")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
                     .frame(width: columns.previewWidth, alignment: .topLeading)
                     .settingsAccessibilityIdentifier("settings-appearance-preview-column")
@@ -468,6 +485,29 @@ struct SettingsView: View {
             SettingsRow(minHeight: sliderRowHeight) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
+                        Text("图片缩放")
+                        Spacer()
+                        Text("\(Int((settings.panelBackgroundZoom * 100).rounded()))%")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                        Button("复位") {
+                            settings.resetPanelBackgroundTransform()
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.tint)
+                    }
+                    Slider(
+                        value: panelBackgroundZoomBinding,
+                        in: 1...2,
+                        step: 0.05
+                    )
+                    .accessibilityLabel("背景图片缩放")
+                }
+            }
+            SettingsSectionDivider()
+            SettingsRow(minHeight: sliderRowHeight) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
                         Text("深色遮罩")
                         Spacer()
                         Text("\(Int((settings.panelBackgroundDimOpacity * 100).rounded()))%")
@@ -626,6 +666,20 @@ struct SettingsView: View {
         )
     }
 
+    private var panelBackgroundZoomBinding: Binding<Double> {
+        Binding(
+            get: { settings.panelBackgroundZoom },
+            set: settings.setPanelBackgroundZoom
+        )
+    }
+
+    private var panelBackgroundPosition: CGPoint {
+        CGPoint(
+            x: settings.panelBackgroundPositionX,
+            y: settings.panelBackgroundPositionY
+        )
+    }
+
     private var panelCardOpacityBinding: Binding<Double> {
         Binding(
             get: { settings.panelCardOpacity },
@@ -727,7 +781,7 @@ struct SettingsView: View {
             guard let url = urls.first else { return }
             do {
                 try panelBackgroundStore.importImage(from: url)
-                settings.setPanelBackgroundEnabled(true)
+                settings.didReplacePanelBackgroundImage()
             } catch {
                 backgroundErrorMessage = error.localizedDescription
             }
@@ -742,12 +796,75 @@ struct SettingsView: View {
     }
 
     private func removeBackgroundImage() {
-        settings.setPanelBackgroundEnabled(false)
         do {
             try panelBackgroundStore.removeImage()
+            settings.didRemovePanelBackgroundImage()
         } catch {
             backgroundErrorMessage = error.localizedDescription
         }
+    }
+
+    @ViewBuilder
+    private func backgroundAdjustmentOverlay(size: CGSize) -> some View {
+        if settings.isPanelBackgroundEnabled, let image = panelBackgroundStore.image {
+            Color.clear
+                .contentShape(Rectangle())
+                .focusable()
+                .focused($isBackgroundPreviewFocused)
+                .gesture(
+                    DragGesture(minimumDistance: 1)
+                        .onChanged { value in
+                            isBackgroundPreviewFocused = true
+                            let start = backgroundDragStartPosition
+                                ?? panelBackgroundPosition
+                            if backgroundDragStartPosition == nil {
+                                backgroundDragStartPosition = start
+                            }
+                            let transform = PanelBackgroundTransform.resolve(
+                                imageSize: image.size,
+                                containerSize: size,
+                                zoom: settings.panelBackgroundZoom,
+                                position: start
+                            )
+                            let updated = PanelBackgroundTransform.draggedPosition(
+                                from: start,
+                                translation: value.translation,
+                                maximumOffset: transform.maximumOffset
+                            )
+                            settings.setPanelBackgroundPosition(
+                                x: updated.x,
+                                y: updated.y
+                            )
+                        }
+                        .onEnded { _ in
+                            backgroundDragStartPosition = nil
+                        }
+                )
+                .simultaneousGesture(
+                    TapGesture().onEnded {
+                        isBackgroundPreviewFocused = true
+                    }
+                )
+                .onMoveCommand { direction in
+                    movePanelBackground(direction)
+                }
+                .accessibilityLabel("调整背景图片位置")
+                .accessibilityHint("拖动图片调整位置，或使用方向键微调")
+        }
+    }
+
+    private func movePanelBackground(_ direction: MoveCommandDirection) {
+        let step = 0.025
+        var x = settings.panelBackgroundPositionX
+        var y = settings.panelBackgroundPositionY
+        switch direction {
+        case .left: x -= step
+        case .right: x += step
+        case .up: y -= step
+        case .down: y += step
+        @unknown default: return
+        }
+        settings.setPanelBackgroundPosition(x: x, y: y)
     }
 
     private func metricSetting(_ metric: MetricKind) -> some View {

@@ -88,6 +88,8 @@ enum SettingsVisualCheck {
         let settings = MonitorSettings(defaults: defaults)
         settings.applyPreset(.everyday)
         settings.setPanelBackgroundEnabled(true)
+        settings.setPanelBackgroundZoom(1.35)
+        settings.setPanelBackgroundPosition(x: 0.30, y: -0.20)
         let monitor = PerformanceMonitor(settings: settings)
         let backgroundStore = PanelBackgroundStore(
             directoryURL: FileManager.default.temporaryDirectory.appendingPathComponent(

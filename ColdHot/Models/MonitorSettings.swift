@@ -26,6 +26,8 @@ final class MonitorSettings: ObservableObject {
     static let defaultPanelPrimaryTextOpacity = 1.0
     static let defaultPanelSecondaryTextOpacity = 1.0
     static let defaultPanelProgressOpacity = 1.0
+    static let defaultPanelBackgroundZoom = 1.0
+    static let defaultPanelBackgroundPosition = 0.0
 
     @Published private(set) var enabledMetrics: Set<MetricKind> {
         didSet { persistMetrics() }
@@ -74,6 +76,12 @@ final class MonitorSettings: ObservableObject {
     @Published private(set) var panelSecondaryTextOpacity: Double
 
     @Published private(set) var panelProgressOpacity: Double
+
+    @Published private(set) var panelBackgroundZoom: Double
+
+    @Published private(set) var panelBackgroundPositionX: Double
+
+    @Published private(set) var panelBackgroundPositionY: Double
 
     @Published private(set) var thresholdRules: [ThresholdMetric: ThresholdRule] {
         didSet { persistThresholdRules() }
@@ -152,6 +160,24 @@ final class MonitorSettings: ObservableObject {
             from: defaults,
             key: Keys.panelProgressOpacity,
             defaultValue: Self.defaultPanelProgressOpacity
+        )
+        panelBackgroundZoom = Self.readFiniteValue(
+            from: defaults,
+            key: Keys.panelBackgroundZoom,
+            defaultValue: Self.defaultPanelBackgroundZoom,
+            range: 1...2
+        )
+        panelBackgroundPositionX = Self.readFiniteValue(
+            from: defaults,
+            key: Keys.panelBackgroundPositionX,
+            defaultValue: Self.defaultPanelBackgroundPosition,
+            range: -1...1
+        )
+        panelBackgroundPositionY = Self.readFiniteValue(
+            from: defaults,
+            key: Keys.panelBackgroundPositionY,
+            defaultValue: Self.defaultPanelBackgroundPosition,
+            range: -1...1
         )
 
         let defaultRules = Dictionary(uniqueKeysWithValues: ThresholdMetric.allCases.map {
@@ -263,6 +289,41 @@ final class MonitorSettings: ObservableObject {
         defaults.set(clamped, forKey: Keys.panelProgressOpacity)
     }
 
+    func setPanelBackgroundZoom(_ zoom: Double) {
+        guard zoom.isFinite else { return }
+        let clamped = min(max(zoom, 1), 2)
+        panelBackgroundZoom = clamped
+        defaults.set(clamped, forKey: Keys.panelBackgroundZoom)
+    }
+
+    func setPanelBackgroundPosition(x: Double, y: Double) {
+        guard x.isFinite, y.isFinite else { return }
+        let clampedX = min(max(x, -1), 1)
+        let clampedY = min(max(y, -1), 1)
+        panelBackgroundPositionX = clampedX
+        panelBackgroundPositionY = clampedY
+        defaults.set(clampedX, forKey: Keys.panelBackgroundPositionX)
+        defaults.set(clampedY, forKey: Keys.panelBackgroundPositionY)
+    }
+
+    func resetPanelBackgroundTransform() {
+        setPanelBackgroundZoom(Self.defaultPanelBackgroundZoom)
+        setPanelBackgroundPosition(
+            x: Self.defaultPanelBackgroundPosition,
+            y: Self.defaultPanelBackgroundPosition
+        )
+    }
+
+    func didReplacePanelBackgroundImage() {
+        resetPanelBackgroundTransform()
+        setPanelBackgroundEnabled(true)
+    }
+
+    func didRemovePanelBackgroundImage() {
+        setPanelBackgroundEnabled(false)
+        resetPanelBackgroundTransform()
+    }
+
     func applyPreset(_ preset: MonitoringPreset) {
         switch preset {
         case .minimal:
@@ -316,6 +377,7 @@ final class MonitorSettings: ObservableObject {
         setPanelPrimaryTextOpacity(Self.defaultPanelPrimaryTextOpacity)
         setPanelSecondaryTextOpacity(Self.defaultPanelSecondaryTextOpacity)
         setPanelProgressOpacity(Self.defaultPanelProgressOpacity)
+        resetPanelBackgroundTransform()
         thresholdRules = Dictionary(uniqueKeysWithValues: ThresholdMetric.allCases.map {
             ($0, ThresholdRule.defaultRule(for: $0))
         })
@@ -357,6 +419,18 @@ final class MonitorSettings: ObservableObject {
         return min(max(storedOpacity, 0.50), 1)
     }
 
+    private static func readFiniteValue(
+        from defaults: UserDefaults,
+        key: String,
+        defaultValue: Double,
+        range: ClosedRange<Double>
+    ) -> Double {
+        guard defaults.object(forKey: key) != nil else { return defaultValue }
+        let storedValue = defaults.double(forKey: key)
+        guard storedValue.isFinite else { return defaultValue }
+        return min(max(storedValue, range.lowerBound), range.upperBound)
+    }
+
     private enum Keys {
         static let enabledMetrics = "enabledMetrics"
         static let enabledDetails = "enabledDetails"
@@ -371,6 +445,9 @@ final class MonitorSettings: ObservableObject {
         static let panelPrimaryTextOpacity = "panelPrimaryTextOpacity"
         static let panelSecondaryTextOpacity = "panelSecondaryTextOpacity"
         static let panelProgressOpacity = "panelProgressOpacity"
+        static let panelBackgroundZoom = "panelBackgroundZoom"
+        static let panelBackgroundPositionX = "panelBackgroundPositionX"
+        static let panelBackgroundPositionY = "panelBackgroundPositionY"
         static let panelTextOpacity = "panelTextOpacity"
         static let thresholdRules = "thresholdRules"
     }

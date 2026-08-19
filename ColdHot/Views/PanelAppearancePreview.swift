@@ -5,6 +5,8 @@ struct PanelAppearancePreview: View {
     let image: NSImage?
     let isBackgroundEnabled: Bool
     let dimOpacity: Double
+    let backgroundZoom: Double
+    let backgroundPosition: CGPoint
     let cardOpacity: Double
     let primaryTextOpacity: Double
     let secondaryTextOpacity: Double
@@ -60,7 +62,9 @@ struct PanelAppearancePreview: View {
             PanelBackgroundView(
                 image: image,
                 isEnabled: isBackgroundEnabled,
-                dimOpacity: dimOpacity
+                dimOpacity: dimOpacity,
+                zoom: backgroundZoom,
+                position: backgroundPosition
             )
         }
         .panelReadability(

@@ -114,7 +114,12 @@ struct DashboardView: View {
             PanelBackgroundView(
                 image: panelBackgroundStore.image,
                 isEnabled: settings.isPanelBackgroundEnabled,
-                dimOpacity: settings.panelBackgroundDimOpacity
+                dimOpacity: settings.panelBackgroundDimOpacity,
+                zoom: settings.panelBackgroundZoom,
+                position: CGPoint(
+                    x: settings.panelBackgroundPositionX,
+                    y: settings.panelBackgroundPositionY
+                )
             )
         }
         .panelReadability(

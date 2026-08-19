@@ -208,6 +208,22 @@ struct PanelBackgroundView: View {
     let image: NSImage?
     let isEnabled: Bool
     let dimOpacity: Double
+    let zoom: Double
+    let position: CGPoint
+
+    init(
+        image: NSImage?,
+        isEnabled: Bool,
+        dimOpacity: Double,
+        zoom: Double = 1,
+        position: CGPoint = .zero
+    ) {
+        self.image = image
+        self.isEnabled = isEnabled
+        self.dimOpacity = dimOpacity
+        self.zoom = zoom
+        self.position = position
+    }
 
     var body: some View {
         ZStack {
@@ -215,9 +231,24 @@ struct PanelBackgroundView: View {
                 .fill(.regularMaterial)
 
             if isEnabled, let image {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFill()
+                GeometryReader { proxy in
+                    let transform = PanelBackgroundTransform.resolve(
+                        imageSize: image.size,
+                        containerSize: proxy.size,
+                        zoom: zoom,
+                        position: position
+                    )
+                    Image(nsImage: image)
+                        .resizable()
+                        .frame(
+                            width: transform.renderedSize.width,
+                            height: transform.renderedSize.height
+                        )
+                        .position(
+                            x: proxy.size.width / 2 + transform.offset.width,
+                            y: proxy.size.height / 2 + transform.offset.height
+                        )
+                }
 
                 Color.black.opacity(min(max(dimOpacity, 0), 0.70))
             }
@@ -225,6 +256,89 @@ struct PanelBackgroundView: View {
         .clipped()
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+}
+
+struct PanelBackgroundTransform: Equatable {
+    let zoom: CGFloat
+    let position: CGPoint
+    let renderedSize: CGSize
+    let maximumOffset: CGSize
+    let offset: CGSize
+
+    static func resolve(
+        imageSize: CGSize,
+        containerSize: CGSize,
+        zoom: Double,
+        position: CGPoint
+    ) -> PanelBackgroundTransform {
+        let clampedZoom = CGFloat(min(max(zoom.isFinite ? zoom : 1, 1), 2))
+        let clampedPosition = CGPoint(
+            x: min(max(position.x.isFinite ? position.x : 0, -1), 1),
+            y: min(max(position.y.isFinite ? position.y : 0, -1), 1)
+        )
+        guard imageSize.width > 0, imageSize.height > 0,
+              containerSize.width > 0, containerSize.height > 0 else {
+            return PanelBackgroundTransform(
+                zoom: clampedZoom,
+                position: clampedPosition,
+                renderedSize: containerSize,
+                maximumOffset: .zero,
+                offset: .zero
+            )
+        }
+
+        let fillScale = max(
+            containerSize.width / imageSize.width,
+            containerSize.height / imageSize.height
+        )
+        let scale = fillScale * clampedZoom
+        let renderedSize = CGSize(
+            width: imageSize.width * scale,
+            height: imageSize.height * scale
+        )
+        let maximumOffset = CGSize(
+            width: max(0, (renderedSize.width - containerSize.width) / 2),
+            height: max(0, (renderedSize.height - containerSize.height) / 2)
+        )
+        return PanelBackgroundTransform(
+            zoom: clampedZoom,
+            position: clampedPosition,
+            renderedSize: renderedSize,
+            maximumOffset: maximumOffset,
+            offset: CGSize(
+                width: clampedPosition.x * maximumOffset.width,
+                height: clampedPosition.y * maximumOffset.height
+            )
+        )
+    }
+
+    static func draggedPosition(
+        from position: CGPoint,
+        translation: CGSize,
+        maximumOffset: CGSize
+    ) -> CGPoint {
+        CGPoint(
+            x: normalizedPosition(
+                position.x,
+                translation: translation.width,
+                maximumOffset: maximumOffset.width
+            ),
+            y: normalizedPosition(
+                position.y,
+                translation: translation.height,
+                maximumOffset: maximumOffset.height
+            )
+        )
+    }
+
+    private static func normalizedPosition(
+        _ current: CGFloat,
+        translation: CGFloat,
+        maximumOffset: CGFloat
+    ) -> CGFloat {
+        guard maximumOffset > 0 else { return 0 }
+        return min(max(current + translation / maximumOffset, -1), 1)
     }
 }
 

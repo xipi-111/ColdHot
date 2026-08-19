@@ -9,6 +9,8 @@ enum PanelBackgroundCheck {
     @MainActor
     static func main() throws {
         checkSettingsPersistence()
+        checkBackgroundTransformGeometry()
+        try checkPreviewLiveTransformWiring()
         try checkImageLifecycle()
         checkBackgroundRendering()
         checkReadabilityRendering()
@@ -39,6 +41,25 @@ enum PanelBackgroundCheck {
         expect(initial.panelPrimaryTextOpacity == 1)
         expect(initial.panelSecondaryTextOpacity == 1)
         expect(initial.panelProgressOpacity == 1)
+        expect(initial.panelBackgroundZoom == 1)
+        expect(initial.panelBackgroundPositionX == 0)
+        expect(initial.panelBackgroundPositionY == 0)
+
+        initial.setPanelBackgroundZoom(1.5)
+        initial.setPanelBackgroundPosition(x: 0.4, y: -0.6)
+        initial.didReplacePanelBackgroundImage()
+        expect(initial.isPanelBackgroundEnabled)
+        expect(initial.panelBackgroundZoom == 1)
+        expect(initial.panelBackgroundPositionX == 0)
+        expect(initial.panelBackgroundPositionY == 0)
+
+        initial.setPanelBackgroundZoom(1.8)
+        initial.setPanelBackgroundPosition(x: -0.7, y: 0.3)
+        initial.didRemovePanelBackgroundImage()
+        expect(!initial.isPanelBackgroundEnabled)
+        expect(initial.panelBackgroundZoom == 1)
+        expect(initial.panelBackgroundPositionX == 0)
+        expect(initial.panelBackgroundPositionY == 0)
 
         initial.setPanelBackgroundEnabled(true)
         initial.setPanelBackgroundDimOpacity(1)
@@ -46,6 +67,8 @@ enum PanelBackgroundCheck {
         initial.setPanelPrimaryTextOpacity(2)
         initial.setPanelSecondaryTextOpacity(2)
         initial.setPanelProgressOpacity(2)
+        initial.setPanelBackgroundZoom(3)
+        initial.setPanelBackgroundPosition(x: -2, y: 2)
 
         let restored = MonitorSettings(defaults: defaults)
         expect(restored.isPanelBackgroundEnabled)
@@ -54,6 +77,20 @@ enum PanelBackgroundCheck {
         expect(restored.panelPrimaryTextOpacity == 1)
         expect(restored.panelSecondaryTextOpacity == 1)
         expect(restored.panelProgressOpacity == 1)
+        expect(restored.panelBackgroundZoom == 2)
+        expect(restored.panelBackgroundPositionX == -1)
+        expect(restored.panelBackgroundPositionY == 1)
+
+        restored.setPanelBackgroundZoom(.nan)
+        restored.setPanelBackgroundPosition(x: .nan, y: .nan)
+        expect(restored.panelBackgroundZoom == 2)
+        expect(restored.panelBackgroundPositionX == -1)
+        expect(restored.panelBackgroundPositionY == 1)
+
+        restored.resetPanelBackgroundTransform()
+        expect(restored.panelBackgroundZoom == 1)
+        expect(restored.panelBackgroundPositionX == 0)
+        expect(restored.panelBackgroundPositionY == 0)
 
         restored.setPanelBackgroundDimOpacity(-1)
         restored.setPanelCardOpacity(0)
@@ -73,6 +110,9 @@ enum PanelBackgroundCheck {
         expect(restored.panelPrimaryTextOpacity == 1)
         expect(restored.panelSecondaryTextOpacity == 1)
         expect(restored.panelProgressOpacity == 1)
+        expect(restored.panelBackgroundZoom == 1)
+        expect(restored.panelBackgroundPositionX == 0)
+        expect(restored.panelBackgroundPositionY == 0)
 
         defaults.removePersistentDomain(forName: suiteName)
         defaults.set(0.65, forKey: "panelTextOpacity")
@@ -86,6 +126,86 @@ enum PanelBackgroundCheck {
         let migratedRestored = MonitorSettings(defaults: defaults)
         expect(migratedRestored.panelPrimaryTextOpacity == 0.80)
         expect(migratedRestored.panelSecondaryTextOpacity == 0.65)
+    }
+
+    private static func checkBackgroundTransformGeometry() {
+        let centered = PanelBackgroundTransform.resolve(
+            imageSize: CGSize(width: 200, height: 100),
+            containerSize: CGSize(width: 100, height: 100),
+            zoom: 1,
+            position: CGPoint(x: 0, y: 0)
+        )
+        expect(centered.renderedSize == CGSize(width: 200, height: 100))
+        expect(centered.maximumOffset == CGSize(width: 50, height: 0))
+        expect(centered.offset == .zero)
+
+        let rightEdge = PanelBackgroundTransform.resolve(
+            imageSize: CGSize(width: 200, height: 100),
+            containerSize: CGSize(width: 100, height: 100),
+            zoom: 1,
+            position: CGPoint(x: 1, y: 0)
+        )
+        expect(rightEdge.offset == CGSize(width: 50, height: 0))
+
+        let zoomed = PanelBackgroundTransform.resolve(
+            imageSize: CGSize(width: 200, height: 100),
+            containerSize: CGSize(width: 100, height: 100),
+            zoom: 2,
+            position: CGPoint(x: -1, y: 1)
+        )
+        expect(zoomed.renderedSize == CGSize(width: 400, height: 200))
+        expect(zoomed.maximumOffset == CGSize(width: 150, height: 50))
+        expect(zoomed.offset == CGSize(width: -150, height: 50))
+
+        let clamped = PanelBackgroundTransform.resolve(
+            imageSize: CGSize(width: 100, height: 200),
+            containerSize: CGSize(width: 100, height: 100),
+            zoom: 9,
+            position: CGPoint(x: -9, y: 9)
+        )
+        expect(clamped.zoom == 2)
+        expect(clamped.position == CGPoint(x: -1, y: 1))
+        expect(clamped.renderedSize.width >= 100)
+        expect(clamped.renderedSize.height >= 100)
+
+        let dragged = PanelBackgroundTransform.draggedPosition(
+            from: .zero,
+            translation: CGSize(width: 25, height: 30),
+            maximumOffset: CGSize(width: 50, height: 0)
+        )
+        expect(dragged == CGPoint(x: 0.5, y: 0))
+    }
+
+    private static func checkPreviewLiveTransformWiring() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let dashboard = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("ColdHot/Views/DashboardView.swift"),
+            encoding: .utf8
+        )
+        let preview = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "ColdHot/Views/PanelAppearancePreview.swift"
+            ),
+            encoding: .utf8
+        )
+        let settings = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("ColdHot/Views/SettingsView.swift"),
+            encoding: .utf8
+        )
+
+        expect(dashboard.contains("zoom: settings.panelBackgroundZoom"))
+        expect(dashboard.contains("x: settings.panelBackgroundPositionX"))
+        expect(dashboard.contains("y: settings.panelBackgroundPositionY"))
+        expect(preview.contains("zoom: backgroundZoom"))
+        expect(preview.contains("position: backgroundPosition"))
+        expect(settings.contains("backgroundZoom: settings.panelBackgroundZoom"))
+        expect(settings.contains("backgroundPosition: panelBackgroundPosition"))
+        expect(settings.contains(".focusable()"))
+        expect(settings.contains(".focused($isBackgroundPreviewFocused)"))
+        expect(settings.contains(".onMoveCommand"))
+        expect(!settings.contains(".focusEffectDisabled()"))
     }
 
     @MainActor
@@ -212,6 +332,27 @@ enum PanelBackgroundCheck {
         expect(clearPixel.redComponent > clearPixel.greenComponent)
         expect(dimmedPixel.redComponent < clearPixel.redComponent * 0.8)
         expect(dimmedPixel.redComponent > dimmedPixel.greenComponent)
+
+        let splitImage = horizontalSplitImage(
+            width: 200,
+            height: 100,
+            leftColor: .systemRed,
+            rightColor: .systemBlue
+        )
+        let imageDraggedRight = renderCenterPixel(
+            image: splitImage,
+            dimOpacity: 0,
+            zoom: 1,
+            position: CGPoint(x: 1, y: 0)
+        )
+        let imageDraggedLeft = renderCenterPixel(
+            image: splitImage,
+            dimOpacity: 0,
+            zoom: 1,
+            position: CGPoint(x: -1, y: 0)
+        )
+        expect(imageDraggedRight.redComponent > imageDraggedRight.blueComponent)
+        expect(imageDraggedLeft.blueComponent > imageDraggedLeft.redComponent)
     }
 
     @MainActor
@@ -300,6 +441,8 @@ enum PanelBackgroundCheck {
             image: solidImage(width: 800, height: 1_200, color: .systemBlue),
             isBackgroundEnabled: true,
             dimOpacity: 0.35,
+            backgroundZoom: 1.4,
+            backgroundPosition: CGPoint(x: -0.25, y: 0.5),
             cardOpacity: 0.80,
             primaryTextOpacity: 0.90,
             secondaryTextOpacity: 0.70,
@@ -423,6 +566,8 @@ enum PanelBackgroundCheck {
             image: image,
             isBackgroundEnabled: true,
             dimOpacity: 0.35,
+            backgroundZoom: 1.4,
+            backgroundPosition: CGPoint(x: -0.25, y: 0.5),
             cardOpacity: 0.80,
             primaryTextOpacity: 1,
             secondaryTextOpacity: 0.75,
@@ -545,13 +690,17 @@ enum PanelBackgroundCheck {
     @MainActor
     private static func renderCenterPixel(
         image: NSImage,
-        dimOpacity: Double
+        dimOpacity: Double,
+        zoom: Double = 1,
+        position: CGPoint = .zero
     ) -> NSColor {
         let side: CGFloat = 100
         let content = PanelBackgroundView(
             image: image,
             isEnabled: true,
-            dimOpacity: dimOpacity
+            dimOpacity: dimOpacity,
+            zoom: zoom,
+            position: position
         )
         .frame(width: side, height: side)
         let hostingView = NSHostingView(rootView: content)
@@ -601,6 +750,36 @@ enum PanelBackgroundCheck {
             cgImage: image,
             size: NSSize(width: width, height: height)
         )
+    }
+
+    private static func horizontalSplitImage(
+        width: Int,
+        height: Int,
+        leftColor: NSColor,
+        rightColor: NSColor
+    ) -> NSImage {
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGBitmapInfo.byteOrder32Big.rawValue
+            | CGImageAlphaInfo.premultipliedLast.rawValue
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo
+        ) else {
+            fatalError("Unable to create split image context")
+        }
+        context.setFillColor(leftColor.cgColor)
+        context.fill(CGRect(x: 0, y: 0, width: width / 2, height: height))
+        context.setFillColor(rightColor.cgColor)
+        context.fill(CGRect(x: width / 2, y: 0, width: width / 2, height: height))
+        guard let image = context.makeImage() else {
+            fatalError("Unable to create split image")
+        }
+        return NSImage(cgImage: image, size: NSSize(width: width, height: height))
     }
 
     private static func brightness(of color: NSColor) -> CGFloat {
