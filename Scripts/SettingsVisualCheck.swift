@@ -156,7 +156,7 @@ enum SettingsVisualCheck {
                     get: { selection.value },
                     set: { selection.value = $0 }
                 ),
-                versionText: "1.3.0 (15)"
+                versionText: "1.3.1 (16)"
             )
         )
         hostingView.frame = NSRect(x: 0, y: 0, width: 204, height: 680)
