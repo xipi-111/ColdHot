@@ -36,6 +36,12 @@ enum DynamicBackgroundTestMedia {
         try makeTwoFrameGIF(at: url, width: 32, height: 24)
     }
 
+    static func makeTwoFrameGIF(at url: URL, width: Int, height: Int) throws {
+        let red = try makeSolidImage(red: 1, green: 0, blue: 0, width: width, height: height)
+        let blue = try makeSolidImage(red: 0, green: 0, blue: 1, width: width, height: height)
+        try writeGIF(at: url, frames: [red, blue], delays: [0.10, 0.25])
+    }
+
     static func makeOversizedTwoFrameGIF(at url: URL) throws {
         try makeTwoFrameGIF(at: url, width: 2_000, height: 1_000)
     }
@@ -229,10 +235,40 @@ enum DynamicBackgroundTestMedia {
         try await exportMOV(composition, to: url)
     }
 
-    private static func makeTwoFrameGIF(at url: URL, width: Int, height: Int) throws {
-        let red = try makeSolidImage(red: 1, green: 0, blue: 0, width: width, height: height)
-        let blue = try makeSolidImage(red: 0, green: 0, blue: 1, width: width, height: height)
-        try writeGIF(at: url, frames: [red, blue], delays: [0.10, 0.25])
+    static func makeLeadingGapH264MOV(
+        at url: URL,
+        workingDirectory: URL
+    ) async throws {
+        let fileManager = FileManager.default
+        try fileManager.createDirectory(
+            at: workingDirectory,
+            withIntermediateDirectories: true
+        )
+        let sourceURL = workingDirectory.appendingPathComponent("gap-source.mp4")
+        try await makeSilentH264Video(at: sourceURL)
+
+        let sourceAsset = AVURLAsset(url: sourceURL)
+        guard let sourceTrack = try await sourceAsset.loadTracks(
+            withMediaType: .video
+        ).first else {
+            throw TestMediaError.unableToBuildComposition
+        }
+        let sourceDuration = try await sourceAsset.load(.duration)
+        let composition = AVMutableComposition()
+        guard let track = composition.addMutableTrack(
+            withMediaType: .video,
+            preferredTrackID: kCMPersistentTrackID_Invalid
+        ) else {
+            throw TestMediaError.unableToBuildComposition
+        }
+        let leadingGap = CMTime(seconds: 1, preferredTimescale: 600)
+        try track.insertTimeRange(
+            CMTimeRange(start: .zero, duration: sourceDuration),
+            of: sourceTrack,
+            at: leadingGap
+        )
+        track.preferredTransform = try await sourceTrack.load(.preferredTransform)
+        try await exportMOV(composition, to: url)
     }
 
     private static func writeGIF(at url: URL, frames: [CGImage], delays: [Double]) throws {

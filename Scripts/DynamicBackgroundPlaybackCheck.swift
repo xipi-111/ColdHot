@@ -20,7 +20,13 @@ enum DynamicBackgroundPlaybackCheck {
 
         let videoURL = directory.appendingPathComponent("two-seconds.mp4")
         try await makeTwoSecondVideo(at: videoURL, in: directory)
+        let replacementVideoURL = directory.appendingPathComponent("two-seconds-replacement.mp4")
+        try fileManager.copyItem(at: videoURL, to: replacementVideoURL)
         try await checkPlaybackLifecycle(videoURL: videoURL)
+        try await checkInflightReplacementAndResetGenerationGuard(
+            firstURL: videoURL,
+            secondURL: replacementVideoURL
+        )
         try await checkLoopBoundaryAndCurrentReplicaFailure(videoURL: videoURL)
         try await checkBoundedFailureLifecycle(in: directory)
         checkPlayerLayerBehavior()
@@ -182,6 +188,72 @@ enum DynamicBackgroundPlaybackCheck {
         expect(!controller.hasActiveLooper, "Reset must release the looper")
         expect(controller.activeAssetID == nil, "Reset must clear the active asset ID")
         expect(controller.playbackErrorMessage == nil, "Reset must clear playback errors")
+    }
+
+    @MainActor
+    private static func checkInflightReplacementAndResetGenerationGuard(
+        firstURL: URL,
+        secondURL: URL
+    ) async throws {
+        let live = PanelBackgroundPlaybackDependencies.live
+        let dependencies = PanelBackgroundPlaybackDependencies(
+            preparePlayerItem: { url in
+                let delay: UInt64 = url == firstURL ? 450_000_000 : 50_000_000
+                try? await Task.sleep(nanoseconds: delay)
+                let asset = AVURLAsset(url: url)
+                _ = try await asset.load(.duration)
+                return AVPlayerItem(asset: asset)
+            },
+            observePlayerItemStatus: live.observePlayerItemStatus
+        )
+        let controller = PanelBackgroundPlaybackController(dependencies: dependencies)
+        let visible = PanelBackgroundPlaybackIntent(
+            isEnabled: true,
+            isVisible: true,
+            reduceMotion: false,
+            audioRequested: false,
+            assetIsDynamic: true,
+            assetHasAudio: false
+        )
+        let first = dynamicAsset(id: "inflight-first", mediaURL: firstURL, hasAudio: false)
+        let second = dynamicAsset(id: "inflight-second", mediaURL: secondURL, hasAudio: false)
+
+        controller.configure(asset: first)
+        controller.update(intent: visible)
+        try await pauseFor(0.02)
+        controller.configure(asset: second)
+        controller.update(intent: visible)
+        try await wait(
+            until: {
+                controller.activeAssetID == second.id
+                    && controller.player.currentItem?.status == .readyToPlay
+                    && controller.player.rate > 0
+            },
+            timeout: 5,
+            diagnostic: "In-flight replacement did not activate the second asset"
+        )
+        try await pauseFor(0.55)
+        let currentURL = (controller.player.currentItem?.asset as? AVURLAsset)?
+            .url.standardizedFileURL
+        expect(
+            currentURL == secondURL.standardizedFileURL,
+            "A late first preparation must not replace the selected second asset"
+        )
+
+        controller.configure(asset: first)
+        controller.update(intent: visible)
+        try await pauseFor(0.02)
+        controller.reset()
+        try await pauseFor(0.55)
+        expect(controller.activeAssetID == nil, "A late post-reset preparation restored an ID")
+        expect(
+            controller.player.items().isEmpty,
+            "A late post-reset preparation installed queue items"
+        )
+        expect(
+            !controller.hasActiveLooper,
+            "A late post-reset preparation installed a looper"
+        )
     }
 
     @MainActor

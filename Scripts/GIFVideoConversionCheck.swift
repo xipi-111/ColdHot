@@ -21,6 +21,7 @@ enum GIFVideoConversionCheck {
                 "delays",
                 "limits",
                 "scaling",
+                "encoder-canvas",
                 "transparency",
                 "cancellation",
                 "writer-failure",
@@ -42,6 +43,8 @@ enum GIFVideoConversionCheck {
             try await checkExactGIFLimitAcceptedAndOneByteOverRejected(in: directory)
         case "scaling":
             try await checkMaximumDimensionScaling(in: directory)
+        case "encoder-canvas":
+            try await checkEncoderSafeCanvasExpansion(in: directory)
         case "transparency":
             try await checkTransparentCompositingBackgrounds(in: directory)
         case "cancellation":
@@ -193,6 +196,64 @@ enum GIFVideoConversionCheck {
 
         let image = try await decodedImage(at: 0.03, from: asset)
         precondition(image.width == 1_600 && image.height == 800)
+    }
+
+    private static func checkEncoderSafeCanvasExpansion(in directory: URL) async throws {
+        for fixture in [
+            (name: "odd-small", source: CGSize(width: 31, height: 23), encoded: CGSize(width: 32, height: 24)),
+            (name: "odd-scaled-limit", source: CGSize(width: 1_600, height: 799), encoded: CGSize(width: 1_600, height: 800)),
+            (name: "minimum", source: CGSize(width: 1, height: 1), encoded: CGSize(width: 2, height: 2)),
+        ] {
+            let sourceURL = directory.appendingPathComponent("\(fixture.name).gif")
+            let outputURL = directory.appendingPathComponent("\(fixture.name).mp4")
+            try DynamicBackgroundTestMedia.makeTwoFrameGIF(
+                at: sourceURL,
+                width: Int(fixture.source.width),
+                height: Int(fixture.source.height)
+            )
+
+            let result = try await GIFVideoConverter().convert(
+                sourceURL: sourceURL,
+                destinationURL: outputURL
+            )
+            precondition(
+                result.displaySize == fixture.encoded,
+                "\(fixture.name) must report its actual encoder-safe canvas; got \(result.displaySize)"
+            )
+
+            let asset = AVURLAsset(url: outputURL)
+            let tracks = try await asset.loadTracks(withMediaType: .video)
+            let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+            let isPlayable = try await asset.load(.isPlayable)
+            precondition(tracks.count == 1, "\(fixture.name) must contain one video track")
+            precondition(audioTracks.isEmpty, "\(fixture.name) must remain silent")
+            precondition(isPlayable, "\(fixture.name) must be playable")
+            let naturalSize = try await tracks[0].load(.naturalSize)
+            precondition(
+                naturalSize == fixture.encoded,
+                "\(fixture.name) track must use the encoder-safe canvas"
+            )
+
+            let poster = try await decodedImage(at: 0.03, from: asset)
+            precondition(
+                poster.width == Int(fixture.encoded.width)
+                    && poster.height == Int(fixture.encoded.height),
+                "\(fixture.name) must produce a full-size decodable poster frame"
+            )
+            let sourceFarEdge = try pixelColor(
+                of: poster,
+                x: Int(fixture.source.width) - 1,
+                y: Int(fixture.source.height) - 1
+            )
+            let minimumVisibleRed = fixture.source == CGSize(width: 1, height: 1)
+                ? 20.0
+                : 80.0
+            precondition(
+                sourceFarEdge.red > sourceFarEdge.blue * 1.5
+                    && sourceFarEdge.red > minimumVisibleRed,
+                "\(fixture.name) must preserve the source's last row and column; got \(sourceFarEdge)"
+            )
+        }
     }
 
     private static func checkTransparentCompositingBackgrounds(in directory: URL) async throws {

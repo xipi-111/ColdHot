@@ -269,7 +269,10 @@ struct PanelBackgroundMediaImporter {
 
     private func makeVideoPoster(from mediaURL: URL, at destinationURL: URL) async throws {
         try Task.checkCancellation()
-        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: mediaURL))
+        let asset = AVURLAsset(url: mediaURL)
+        let firstAvailableTime = try await earliestNonemptyVideoTime(in: asset)
+        try Task.checkCancellation()
+        let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
         generator.maximumSize = CGSize(
             width: Self.maximumPixelDimension,
@@ -277,11 +280,45 @@ struct PanelBackgroundMediaImporter {
         )
         generator.requestedTimeToleranceBefore = .zero
         generator.requestedTimeToleranceAfter = .zero
-        let (image, actualTime) = try await generator.image(at: .zero)
-        guard CMTimeCompare(actualTime, .zero) == 0 else {
+        let image = try await generator.image(at: firstAvailableTime).image
+        try Self.writePNG(image, to: destinationURL)
+    }
+
+    private func earliestNonemptyVideoTime(in asset: AVAsset) async throws -> CMTime {
+        let videoTracks = try await asset.loadTracks(withMediaType: .video)
+        guard !videoTracks.isEmpty else {
+            throw PanelBackgroundImportError.missingVideoTrack
+        }
+
+        var earliestTime: CMTime?
+        for track in videoTracks {
+            let segments = try await track.load(.segments)
+            let nonemptySegmentStarts = segments.lazy
+                .filter { !$0.isEmpty }
+                .map { $0.timeMapping.target.start }
+                .filter(Self.isFiniteTime)
+            let trackStart: CMTime
+            if let segmentStart = nonemptySegmentStarts.min(by: {
+                CMTimeCompare($0, $1) < 0
+            }) {
+                trackStart = segmentStart
+            } else {
+                trackStart = try await track.load(.timeRange).start
+            }
+            guard Self.isFiniteTime(trackStart) else { continue }
+            if earliestTime.map({ CMTimeCompare(trackStart, $0) < 0 }) ?? true {
+                earliestTime = trackStart
+            }
+        }
+
+        guard let earliestTime else {
             throw PanelBackgroundImportError.unableToCreatePoster
         }
-        try Self.writePNG(image, to: destinationURL)
+        return earliestTime
+    }
+
+    private static func isFiniteTime(_ time: CMTime) -> Bool {
+        time.isValid && !time.isIndefinite && time.seconds.isFinite
     }
 
     private func materializeRegularFile(

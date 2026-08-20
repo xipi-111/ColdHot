@@ -699,7 +699,10 @@ struct SettingsView: View {
                         .settingsAccessibilityLabel(backgroundResourceLabel(for: asset.kind))
                     Spacer()
                     Button("更换背景…") { isChoosingBackground = true }
-                        .disabled(backgroundOperationState.isProcessing)
+                        .settingsControlEnabled(
+                            !backgroundOperationState.isProcessing,
+                            identifier: "settings-background-replace"
+                        )
                         .settingsAccessibilityLabel("更换背景…")
                 }
             }
@@ -867,7 +870,10 @@ struct SettingsView: View {
                         removeBackground()
                     }
                     .buttonStyle(.plain)
-                    .disabled(backgroundOperationState.isProcessing)
+                    .settingsControlEnabled(
+                        !backgroundOperationState.isProcessing,
+                        identifier: "settings-background-remove"
+                    )
                 }
             }
         } else {
@@ -890,7 +896,10 @@ struct SettingsView: View {
                     }
                     Spacer()
                     Button("选择背景…") { isChoosingBackground = true }
-                        .disabled(backgroundOperationState.isProcessing)
+                        .settingsControlEnabled(
+                            !backgroundOperationState.isProcessing,
+                            identifier: "settings-background-select"
+                        )
                         .settingsAccessibilityLabel("选择背景…")
                 }
             }

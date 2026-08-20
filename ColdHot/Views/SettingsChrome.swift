@@ -347,6 +347,10 @@ private struct SettingsAccessibilityLabelReporterKey: EnvironmentKey {
     static let defaultValue: ((String) -> Void)? = nil
 }
 
+private struct SettingsControlEnabledReporterKey: EnvironmentKey {
+    static let defaultValue: ((String, Bool) -> Void)? = nil
+}
+
 extension EnvironmentValues {
     var settingsAccessibilityIdentifierReporter: ((String) -> Void)? {
         get { self[SettingsAccessibilityIdentifierReporterKey.self] }
@@ -357,6 +361,11 @@ extension EnvironmentValues {
         get { self[SettingsAccessibilityLabelReporterKey.self] }
         set { self[SettingsAccessibilityLabelReporterKey.self] = newValue }
     }
+
+    var settingsControlEnabledReporter: ((String, Bool) -> Void)? {
+        get { self[SettingsControlEnabledReporterKey.self] }
+        set { self[SettingsControlEnabledReporterKey.self] = newValue }
+    }
 }
 
 extension View {
@@ -366,6 +375,15 @@ extension View {
 
     func settingsAccessibilityLabel(_ label: String) -> some View {
         modifier(SettingsAccessibilityLabelModifier(label: label))
+    }
+
+    func settingsControlEnabled(_ isEnabled: Bool, identifier: String) -> some View {
+        modifier(
+            SettingsControlEnabledModifier(
+                identifier: identifier,
+                isEnabled: isEnabled
+            )
+        )
     }
 }
 
@@ -388,6 +406,21 @@ private struct SettingsAccessibilityLabelModifier: ViewModifier {
         content
             .accessibilityLabel(Text(label))
             .onAppear { reporter?(label) }
+    }
+}
+
+private struct SettingsControlEnabledModifier: ViewModifier {
+    let identifier: String
+    let isEnabled: Bool
+    @Environment(\.settingsControlEnabledReporter) private var reporter
+
+    func body(content: Content) -> some View {
+        content
+            .disabled(!isEnabled)
+            .onAppear { reporter?(identifier, isEnabled) }
+            .onChange(of: isEnabled) { _, newValue in
+                reporter?(identifier, newValue)
+            }
     }
 }
 

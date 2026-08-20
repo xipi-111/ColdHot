@@ -60,7 +60,8 @@ struct GIFVideoConverter {
 
         let frameCount = CGImageSourceGetCount(source)
         let canvasSize = try canvasSize(for: source)
-        let displaySize = scaledSize(for: canvasSize)
+        let contentSize = scaledSize(for: canvasSize)
+        let displaySize = encoderSafeSize(for: contentSize)
         let delays = (0..<frameCount).map { frameDuration(at: $0, in: source) }
         let duration = delays.reduce(CMTime.zero, CMTimeAdd)
         let backgroundColor = logicalBackgroundColor(at: sourceURL) ?? CGColor.black
@@ -106,6 +107,7 @@ struct GIFVideoConverter {
                 from: source,
                 frameCount: frameCount,
                 delays: delays,
+                contentSize: contentSize,
                 displaySize: displaySize,
                 backgroundColor: backgroundColor,
                 writer: writer,
@@ -184,6 +186,22 @@ struct GIFVideoConverter {
         )
     }
 
+    private func encoderSafeSize(for contentSize: CGSize) -> CGSize {
+        CGSize(
+            width: encoderSafeDimension(contentSize.width),
+            height: encoderSafeDimension(contentSize.height)
+        )
+    }
+
+    private func encoderSafeDimension(_ dimension: CGFloat) -> CGFloat {
+        let integerDimension = max(2, Int(dimension.rounded(.up)))
+        return CGFloat(
+            integerDimension.isMultiple(of: 2)
+                ? integerDimension
+                : integerDimension + 1
+        )
+    }
+
     private func frameDuration(at index: Int, in source: CGImageSource) -> CMTime {
         let properties = CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [CFString: Any]
         let gifProperties = properties?[kCGImagePropertyGIFDictionary] as? [CFString: Any]
@@ -201,6 +219,7 @@ struct GIFVideoConverter {
         from source: CGImageSource,
         frameCount: Int,
         delays: [CMTime],
+        contentSize: CGSize,
         displaySize: CGSize,
         backgroundColor: CGColor,
         writer: AVAssetWriter,
@@ -240,6 +259,7 @@ struct GIFVideoConverter {
                                         }
                                         let pixelBuffer = try makePixelBuffer(
                                             for: image,
+                                            contentSize: contentSize,
                                             displaySize: displaySize,
                                             backgroundColor: backgroundColor,
                                             pool: adaptorBox.value.pixelBufferPool
@@ -264,6 +284,7 @@ struct GIFVideoConverter {
                                     }
                                     let pixelBuffer = try makePixelBuffer(
                                         for: lastImage,
+                                        contentSize: contentSize,
                                         displaySize: displaySize,
                                         backgroundColor: backgroundColor,
                                         pool: adaptorBox.value.pixelBufferPool
@@ -295,6 +316,7 @@ struct GIFVideoConverter {
 
     private func makePixelBuffer(
         for image: CGImage,
+        contentSize: CGSize,
         displaySize: CGSize,
         backgroundColor: CGColor,
         pool: CVPixelBufferPool?
@@ -333,7 +355,7 @@ struct GIFVideoConverter {
         context.fill(bounds)
         context.setBlendMode(.normal)
         context.interpolationQuality = .high
-        context.draw(image, in: bounds)
+        context.draw(image, in: CGRect(origin: .zero, size: contentSize))
         return pixelBuffer
     }
 

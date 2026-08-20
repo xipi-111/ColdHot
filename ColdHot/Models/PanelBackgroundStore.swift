@@ -51,11 +51,20 @@ final class PanelBackgroundStore: ObservableObject {
         }
 
         Self.cleanStagingDirectories(in: resolvedDirectory, fileManager: fileManager)
-        asset = Self.loadManifestAsset(
-            from: manifestURL,
-            directoryURL: resolvedDirectory,
+        let manifest = Self.loadManifest(from: manifestURL, fileManager: fileManager)
+        let manifestAsset = manifest.flatMap {
+            Self.loadAsset(
+                from: $0,
+                directoryURL: resolvedDirectory,
+                fileManager: fileManager
+            )
+        }
+        Self.cleanUnreferencedGenerationFiles(
+            in: resolvedDirectory,
+            retaining: manifestAsset == nil ? nil : manifest,
             fileManager: fileManager
-        ) ?? Self.loadLegacyAsset(
+        )
+        asset = manifestAsset ?? Self.loadLegacyAsset(
             at: fileURL,
             directoryURL: resolvedDirectory,
             fileManager: fileManager
@@ -195,30 +204,16 @@ final class PanelBackgroundStore: ObservableObject {
         try beginMutation()
         defer { mutationInProgress = false }
 
-        let manifest = Self.loadManifest(from: manifestURL, fileManager: fileManager)
-        if manifest != nil {
-            if removeIfPresent(fileURL) {
-                throw PanelBackgroundImportError.unableToWrite
-            }
-            do {
-                try fileManager.removeItem(at: manifestURL)
-            } catch {
-                throw PanelBackgroundImportError.unableToWrite
-            }
-            asset = nil
-            var cleanupFailed = removeFilesReferenced(by: manifest, excluding: nil)
-            cleanupFailed = removeStagingDirectories() || cleanupFailed
-            if cleanupFailed {
-                throw PanelBackgroundImportError.cleanupFailed
-            }
-            return
-        }
-
         if removeIfPresent(fileURL) {
             throw PanelBackgroundImportError.unableToWrite
         }
+        if removeIfPresent(manifestURL) {
+            throw PanelBackgroundImportError.unableToWrite
+        }
         asset = nil
-        if removeStagingDirectories() {
+        var cleanupFailed = removeApplicationOwnedGenerationFiles()
+        cleanupFailed = removeStagingDirectories() || cleanupFailed
+        if cleanupFailed {
             throw PanelBackgroundImportError.cleanupFailed
         }
     }
@@ -410,6 +405,17 @@ final class PanelBackgroundStore: ObservableObject {
             if values?.isDirectory == true, values?.isSymbolicLink != true {
                 failed = removeIfPresent(url) || failed
             }
+        }
+        return failed
+    }
+
+    private func removeApplicationOwnedGenerationFiles() -> Bool {
+        var failed = false
+        for url in Self.applicationOwnedGenerationFiles(
+            in: directoryURL,
+            fileManager: fileManager
+        ) {
+            failed = removeIfPresent(url) || failed
         }
         return failed
     }
@@ -624,6 +630,72 @@ final class PanelBackgroundStore: ObservableObject {
                 try? fileManager.removeItem(at: url)
             }
         }
+    }
+
+    private static func cleanUnreferencedGenerationFiles(
+        in directoryURL: URL,
+        retaining manifest: PanelBackgroundManifest?,
+        fileManager: FileManager
+    ) {
+        let retainedPaths = Set(
+            referenceURLsForCleanup(
+                manifest,
+                directoryURL: directoryURL,
+                fileManager: fileManager
+            ).map { $0.standardizedFileURL.path }
+        )
+        for url in applicationOwnedGenerationFiles(
+            in: directoryURL,
+            fileManager: fileManager
+        ) where !retainedPaths.contains(url.standardizedFileURL.path) {
+            try? fileManager.removeItem(at: url)
+        }
+    }
+
+    private static func applicationOwnedGenerationFiles(
+        in directoryURL: URL,
+        fileManager: FileManager
+    ) -> [URL] {
+        guard let contents = try? fileManager.contentsOfDirectory(
+            at: directoryURL,
+            includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+        return contents.filter { url in
+            guard isApplicationOwnedGenerationFilename(url.lastPathComponent),
+                  isCanonicalDescendant(url, of: directoryURL),
+                  let values = try? url.resourceValues(
+                    forKeys: [.isRegularFileKey, .isSymbolicLinkKey]
+                  ),
+                  values.isRegularFile == true,
+                  values.isSymbolicLink != true else {
+                return false
+            }
+            return true
+        }
+    }
+
+    private static func isApplicationOwnedGenerationFilename(_ filename: String) -> Bool {
+        guard isSafeFilename(filename) else { return false }
+        let fileURL = URL(fileURLWithPath: filename)
+        let pathExtension = fileURL.pathExtension
+        let stem = fileURL.deletingPathExtension().lastPathComponent
+
+        let generationString: String
+        if stem.hasPrefix("media-"), !pathExtension.isEmpty {
+            generationString = String(stem.dropFirst("media-".count))
+        } else if stem.hasPrefix("poster-"), pathExtension == "png" {
+            generationString = String(stem.dropFirst("poster-".count))
+        } else {
+            return false
+        }
+
+        guard let generationID = UUID(uuidString: generationString) else {
+            return false
+        }
+        return generationID.uuidString.caseInsensitiveCompare(generationString) == .orderedSame
     }
 
     private static let legacyAssetID = "legacy-background.png"

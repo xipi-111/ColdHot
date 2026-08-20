@@ -22,10 +22,15 @@ enum DynamicBackgroundStoreCheck {
         try await checkTransactionalImports(in: rootDirectory)
         try await checkMutationIsolationAndCancellation(in: rootDirectory)
         try await checkImporterVideoCancellation(in: rootDirectory)
+        try await checkLeadingGapVideoPoster(in: rootDirectory)
         try await checkSymlinkMaterializationAndTransformedPoster(in: rootDirectory)
         try await checkTypeResolutionAndUnknownExtensionLimit(in: rootDirectory)
         try await checkInjectedTransactionFailures(in: rootDirectory)
         try await checkCorruptManifestRestorationFailure(in: rootDirectory)
+        try checkStartupGenerationScanSafety(in: rootDirectory)
+        try await checkCrashWindowRestartReconciliation(in: rootDirectory)
+        try checkCorruptManifestRemovalAndGenerationScanSafety(in: rootDirectory)
+        try checkRemovalContinuesAfterGenerationCleanupFailure(in: rootDirectory)
         try await checkStartupManifestHardening(in: rootDirectory)
         print("Dynamic background store checks passed")
     }
@@ -373,6 +378,60 @@ enum DynamicBackgroundStoreCheck {
     }
 
     @MainActor
+    private static func checkLeadingGapVideoPoster(in rootDirectory: URL) async throws {
+        let sourceURL = rootDirectory.appendingPathComponent("leading-gap.mov")
+        try await DynamicBackgroundTestMedia.makeLeadingGapH264MOV(
+            at: sourceURL,
+            workingDirectory: rootDirectory.appendingPathComponent(
+                "leading-gap-fixture",
+                isDirectory: true
+            )
+        )
+
+        let asset = AVURLAsset(url: sourceURL)
+        let exactZeroGenerator = AVAssetImageGenerator(asset: asset)
+        exactZeroGenerator.appliesPreferredTrackTransform = true
+        exactZeroGenerator.requestedTimeToleranceBefore = .zero
+        exactZeroGenerator.requestedTimeToleranceAfter = .zero
+        do {
+            _ = try await exactZeroGenerator.image(at: .zero)
+            fatalError("Leading-gap fixture must not have a decodable frame at zero")
+        } catch {}
+
+        let firstFrameTime = CMTime(seconds: 1, preferredTimescale: 600)
+        let exactFirstFrameGenerator = AVAssetImageGenerator(asset: asset)
+        exactFirstFrameGenerator.appliesPreferredTrackTransform = true
+        exactFirstFrameGenerator.requestedTimeToleranceBefore = .zero
+        exactFirstFrameGenerator.requestedTimeToleranceAfter = .zero
+        let firstFrame = try await exactFirstFrameGenerator.image(at: firstFrameTime)
+        expect(
+            firstFrame.actualTime >= firstFrameTime,
+            "Leading-gap fixture must decode at its first one-second presentation time"
+        )
+
+        let stagingDirectory = rootDirectory.appendingPathComponent(
+            "leading-gap-staging",
+            isDirectory: true
+        )
+        let prepared = try await PanelBackgroundMediaImporter().prepareImport(
+            from: sourceURL,
+            in: stagingDirectory
+        )
+        expect(prepared.kind == .video, "Leading-gap MOV must import as video")
+        guard let posterURL = prepared.posterURL else {
+            fatalError("Leading-gap MOV must generate a poster")
+        }
+        expect(
+            FileManager.default.fileExists(atPath: posterURL.path),
+            "Leading-gap MOV poster must exist"
+        )
+        try expect(
+            try pixelSize(at: posterURL) == CGSize(width: 32, height: 24),
+            "Leading-gap MOV poster must preserve the first available frame size"
+        )
+    }
+
+    @MainActor
     private static func checkSymlinkMaterializationAndTransformedPoster(
         in rootDirectory: URL
     ) async throws {
@@ -664,6 +723,259 @@ enum DynamicBackgroundStoreCheck {
         expect(
             PanelBackgroundStore(directoryURL: directory, fileManager: fileManager).asset == nil,
             "Invalid-manifest recovery must remain coherent after restart"
+        )
+    }
+
+    @MainActor
+    private static func checkCrashWindowRestartReconciliation(
+        in rootDirectory: URL
+    ) async throws {
+        let sourceURL = rootDirectory.appendingPathComponent("crash-window-source.png")
+        try DynamicBackgroundTestMedia.makePNG(at: sourceURL)
+
+        let beforeManifestDirectory = rootDirectory.appendingPathComponent(
+            "crash-before-manifest",
+            isDirectory: true
+        )
+        let beforeManifestStore = PanelBackgroundStore(directoryURL: beforeManifestDirectory)
+        try await beforeManifestStore.importBackground(from: sourceURL)
+        let retainedManifest = try loadManifest(in: beforeManifestDirectory)
+        let retainedURLs = urlsReferenced(by: retainedManifest, in: beforeManifestDirectory)
+        let uncommittedID = UUID().uuidString
+        let uncommittedMediaURL = beforeManifestDirectory.appendingPathComponent(
+            "media-\(uncommittedID).png"
+        )
+        let uncommittedPosterURL = beforeManifestDirectory.appendingPathComponent(
+            "poster-\(uncommittedID).png"
+        )
+        try DynamicBackgroundTestMedia.makePNG(at: uncommittedMediaURL)
+        try DynamicBackgroundTestMedia.makePNG(at: uncommittedPosterURL)
+
+        let beforeManifestRestart = PanelBackgroundStore(directoryURL: beforeManifestDirectory)
+        expect(
+            beforeManifestRestart.asset?.id == retainedManifest.generationID,
+            "Restart after generation move but before manifest must retain the committed manifest"
+        )
+        expect(
+            retainedURLs.allSatisfy { FileManager.default.fileExists(atPath: $0.path) },
+            "Restart reconciliation must preserve every valid manifest reference"
+        )
+        expect(
+            !FileManager.default.fileExists(atPath: uncommittedMediaURL.path)
+                && !FileManager.default.fileExists(atPath: uncommittedPosterURL.path),
+            "Restart must remove a generation orphaned before manifest publication"
+        )
+
+        let afterManifestDirectory = rootDirectory.appendingPathComponent(
+            "crash-after-manifest",
+            isDirectory: true
+        )
+        let afterManifestStore = PanelBackgroundStore(directoryURL: afterManifestDirectory)
+        try await afterManifestStore.importBackground(from: sourceURL)
+        let oldManifest = try loadManifest(in: afterManifestDirectory)
+        let oldURLs = urlsReferenced(by: oldManifest, in: afterManifestDirectory)
+        let committedID = UUID().uuidString
+        let committedFilename = "media-\(committedID).png"
+        try DynamicBackgroundTestMedia.makePNG(
+            at: afterManifestDirectory.appendingPathComponent(committedFilename)
+        )
+        let committedManifest = PanelBackgroundManifest(
+            schemaVersion: PanelBackgroundManifest.currentSchemaVersion,
+            generationID: committedID,
+            kind: .staticImage,
+            mediaFilename: committedFilename,
+            posterFilename: nil,
+            originalTypeIdentifier: "public.png",
+            hasAudio: false
+        )
+        try JSONEncoder().encode(committedManifest).write(
+            to: afterManifestDirectory.appendingPathComponent("manifest.json"),
+            options: .atomic
+        )
+
+        let afterManifestRestart = PanelBackgroundStore(directoryURL: afterManifestDirectory)
+        expect(
+            afterManifestRestart.asset?.id == committedID,
+            "Restart after manifest publication must retain the newly committed generation"
+        )
+        expect(
+            oldURLs.allSatisfy { !FileManager.default.fileExists(atPath: $0.path) },
+            "Restart after manifest publication must remove the prior generation"
+        )
+        expect(
+            FileManager.default.fileExists(
+                atPath: afterManifestDirectory.appendingPathComponent(committedFilename).path
+            ),
+            "Restart reconciliation must not remove the current manifest media"
+        )
+    }
+
+    @MainActor
+    private static func checkStartupGenerationScanSafety(in rootDirectory: URL) throws {
+        let directory = rootDirectory.appendingPathComponent(
+            "startup-generation-scan-safety",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let ownedURL = directory.appendingPathComponent("media-\(UUID().uuidString).mov")
+        try Data("owned orphan".utf8).write(to: ownedURL)
+        let nonmatchingURL = directory.appendingPathComponent("media-user-keeps-this.mov")
+        try Data("user-owned".utf8).write(to: nonmatchingURL)
+        let outsideTargetURL = rootDirectory.appendingPathComponent("startup-symlink-target.mov")
+        try Data("outside startup target".utf8).write(to: outsideTargetURL)
+        let matchingSymlinkURL = directory.appendingPathComponent(
+            "poster-\(UUID().uuidString).png"
+        )
+        try FileManager.default.createSymbolicLink(
+            at: matchingSymlinkURL,
+            withDestinationURL: outsideTargetURL
+        )
+
+        _ = PanelBackgroundStore(directoryURL: directory)
+        expect(
+            !FileManager.default.fileExists(atPath: ownedURL.path),
+            "Startup must remove an unreferenced strictly named generation"
+        )
+        expect(
+            FileManager.default.fileExists(atPath: nonmatchingURL.path),
+            "Startup must preserve nonmatching files"
+        )
+        let symlinkValues = try matchingSymlinkURL.resourceValues(forKeys: [.isSymbolicLinkKey])
+        expect(
+            symlinkValues.isSymbolicLink == true,
+            "Startup must preserve a strictly named symbolic link"
+        )
+        try expect(
+            try Data(contentsOf: outsideTargetURL) == Data("outside startup target".utf8),
+            "Startup must not follow or delete a symbolic-link target"
+        )
+    }
+
+    @MainActor
+    private static func checkCorruptManifestRemovalAndGenerationScanSafety(
+        in rootDirectory: URL
+    ) throws {
+        let directory = rootDirectory.appendingPathComponent(
+            "corrupt-removal-scan-safety",
+            isDirectory: true
+        )
+        let store = PanelBackgroundStore(directoryURL: directory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let ownedID = UUID().uuidString
+        let ownedMediaURL = directory.appendingPathComponent("media-\(ownedID).mov")
+        let ownedPosterURL = directory.appendingPathComponent("poster-\(ownedID).png")
+        try Data("owned media".utf8).write(to: ownedMediaURL)
+        try DynamicBackgroundTestMedia.makePNG(at: ownedPosterURL)
+        try Data("{ corrupt manifest".utf8).write(
+            to: directory.appendingPathComponent("manifest.json")
+        )
+        try DynamicBackgroundTestMedia.makePNG(
+            at: directory.appendingPathComponent("background.png")
+        )
+        let stagingURL = directory.appendingPathComponent("staging-corrupt", isDirectory: true)
+        try FileManager.default.createDirectory(at: stagingURL, withIntermediateDirectories: true)
+
+        let nonmatchingURLs = [
+            directory.appendingPathComponent("media-not-a-uuid.mov"),
+            directory.appendingPathComponent("media-\(UUID().uuidString)-extra.mov"),
+            directory.appendingPathComponent("poster-\(UUID().uuidString).jpg"),
+        ]
+        for url in nonmatchingURLs {
+            try Data("user-owned".utf8).write(to: url)
+        }
+        let outsideTargetURL = rootDirectory.appendingPathComponent("generation-symlink-target.mov")
+        try Data("outside target".utf8).write(to: outsideTargetURL)
+        let matchingSymlinkURL = directory.appendingPathComponent(
+            "media-\(UUID().uuidString).mov"
+        )
+        try FileManager.default.createSymbolicLink(
+            at: matchingSymlinkURL,
+            withDestinationURL: outsideTargetURL
+        )
+
+        try store.removeBackground()
+        expect(!store.hasBackground, "Corrupt-manifest removal must leave no published asset")
+        for url in [ownedMediaURL, ownedPosterURL] {
+            expect(
+                !FileManager.default.fileExists(atPath: url.path),
+                "Corrupt-manifest removal must delete every strictly named app generation"
+            )
+        }
+        expect(
+            !FileManager.default.fileExists(
+                atPath: directory.appendingPathComponent("manifest.json").path
+            ),
+            "Corrupt-manifest removal must delete the invalid manifest"
+        )
+        expect(
+            !FileManager.default.fileExists(
+                atPath: directory.appendingPathComponent("background.png").path
+            ),
+            "Corrupt-manifest removal must delete the legacy background"
+        )
+        expect(
+            !FileManager.default.fileExists(atPath: stagingURL.path),
+            "Corrupt-manifest removal must delete staging directories"
+        )
+        expect(
+            nonmatchingURLs.allSatisfy { FileManager.default.fileExists(atPath: $0.path) },
+            "Generation cleanup must preserve filenames outside the strict app-owned pattern"
+        )
+        let symlinkValues = try matchingSymlinkURL.resourceValues(forKeys: [.isSymbolicLinkKey])
+        expect(
+            symlinkValues.isSymbolicLink == true,
+            "Generation cleanup must preserve a strictly named symbolic link"
+        )
+        try expect(
+            try Data(contentsOf: outsideTargetURL) == Data("outside target".utf8),
+            "Generation cleanup must never follow or delete a symbolic-link target"
+        )
+    }
+
+    @MainActor
+    private static func checkRemovalContinuesAfterGenerationCleanupFailure(
+        in rootDirectory: URL
+    ) throws {
+        let fileManager = TransactionFaultFileManager()
+        let directory = rootDirectory.appendingPathComponent(
+            "removal-continues-after-failure",
+            isDirectory: true
+        )
+        let store = PanelBackgroundStore(directoryURL: directory, fileManager: fileManager)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let ownedMediaURL = directory.appendingPathComponent(
+            "media-\(UUID().uuidString).mov"
+        )
+        let ownedPosterURL = directory.appendingPathComponent(
+            "poster-\(UUID().uuidString).png"
+        )
+        let stagingURL = directory.appendingPathComponent(
+            "staging-removal-failure",
+            isDirectory: true
+        )
+        try Data("blocked owned media".utf8).write(to: ownedMediaURL)
+        try DynamicBackgroundTestMedia.makePNG(at: ownedPosterURL)
+        try fileManager.createDirectory(at: stagingURL, withIntermediateDirectories: true)
+        fileManager.failRemoveDestinationPrefix = "media-"
+
+        do {
+            try store.removeBackground()
+            fatalError("A blocked generation removal must surface cleanupFailed")
+        } catch PanelBackgroundImportError.cleanupFailed {}
+        expect(
+            fileManager.fileExists(atPath: ownedMediaURL.path),
+            "The injected blocked generation must remain for a later cleanup attempt"
+        )
+        expect(
+            !fileManager.fileExists(atPath: ownedPosterURL.path),
+            "A generation failure must not prevent cleanup of other generation files"
+        )
+        expect(
+            !fileManager.fileExists(atPath: stagingURL.path),
+            "A generation failure must not prevent staging cleanup"
         )
     }
 

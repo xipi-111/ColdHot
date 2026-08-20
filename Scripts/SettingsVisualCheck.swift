@@ -135,6 +135,25 @@ enum SettingsVisualCheck {
             withIntermediateDirectories: true
         )
 
+        if ProcessInfo.processInfo.environment["COLDHOT_SETTINGS_PROCESSING_ONLY"] == "1" {
+            let focusedFixtureRoot = FileManager.default.temporaryDirectory.appendingPathComponent(
+                "coldhot-settings-processing-fixtures-\(UUID().uuidString)",
+                isDirectory: true
+            )
+            try FileManager.default.createDirectory(
+                at: focusedFixtureRoot,
+                withIntermediateDirectories: true
+            )
+            defer { try? FileManager.default.removeItem(at: focusedFixtureRoot) }
+            try verifyEmptyAndProcessingPresentation(
+                settings: settings,
+                monitor: monitor,
+                fixtureRoot: focusedFixtureRoot,
+                outputDirectory: outputDirectory
+            )
+            return
+        }
+
         if ProcessInfo.processInfo.environment["COLDHOT_TASK6_OPERATIONS_ONLY"] == "1" {
             let focusedFixtureRoot = FileManager.default.temporaryDirectory.appendingPathComponent(
                 "coldhot-settings-task6-operation-fixtures-\(UUID().uuidString)",
@@ -306,6 +325,7 @@ enum SettingsVisualCheck {
         let identifiers = AccessibilityIdentifierStore()
         let labels = AccessibilityLabelStore()
         let actions = AccessibilityActionStore()
+        let controlEnabledStates = SettingsControlEnabledStore()
         let hostingView = NSHostingView(
             rootView: view
                 .environment(
@@ -327,6 +347,12 @@ enum SettingsVisualCheck {
                 .environment(
                     \.panelAccessibilityActionReporter,
                     { identifier, action in actions.values[identifier] = action }
+                )
+                .environment(
+                    \.settingsControlEnabledReporter,
+                    { identifier, isEnabled in
+                        controlEnabledStates.values[identifier] = isEnabled
+                    }
                 )
         )
         hostingView.appearance = NSAppearance(named: appearance)
@@ -461,7 +487,8 @@ enum SettingsVisualCheck {
         return SettingsRenderReport(
             identifiers: identifiers.values,
             labels: labels.values,
-            actions: actions.values
+            actions: actions.values,
+            controlEnabledStates: controlEnabledStates.values
         )
     }
 
@@ -922,6 +949,12 @@ enum SettingsVisualCheck {
         let emptyStore = PanelBackgroundStore(
             directoryURL: fixtureRoot.appendingPathComponent("empty", isDirectory: true)
         )
+        let populatedStore = try makeFixtureStore(
+            in: fixtureRoot,
+            name: "populated-processing",
+            kind: .staticImage,
+            hasAudio: false
+        )
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {
             for size in [SettingsLayout.defaultContentSize, SettingsLayout.minimumContentSize] {
                 let emptyReport = try render(
@@ -959,6 +992,35 @@ enum SettingsVisualCheck {
                         + "\(Int(size.width))x\(Int(size.height)).png"
                 )
                 expect(processingReport.labels.contains("正在处理动态背景…"))
+
+                let populatedProcessingReport = try render(
+                    SettingsView(
+                        settings: settings,
+                        panelBackgroundStore: populatedStore,
+                        monitor: monitor,
+                        updateController: UpdateController(),
+                        backgroundOperationState: operationState
+                    ),
+                    page: .appearance,
+                    appearance: appearance,
+                    size: size,
+                    outputPath: outputDirectory
+                        + "/fixture-populated-processing-\(appearance.rawValue)-"
+                        + "\(Int(size.width))x\(Int(size.height)).png",
+                    expectedBackgroundLabel: "自定义图片",
+                    expectsPreviewAudioToggle: false
+                )
+                expect(populatedProcessingReport.labels.contains("正在处理动态背景…"))
+                expect(
+                    populatedProcessingReport.controlEnabledStates[
+                        "settings-background-replace"
+                    ] == false
+                )
+                expect(
+                    populatedProcessingReport.controlEnabledStates[
+                        "settings-background-remove"
+                    ] == false
+                )
             }
         }
     }
@@ -1099,10 +1161,16 @@ private final class AccessibilityActionStore {
     var values: [String: () -> Void] = [:]
 }
 
+@MainActor
+private final class SettingsControlEnabledStore {
+    var values: [String: Bool] = [:]
+}
+
 private struct SettingsRenderReport {
     let identifiers: Set<String>
     let labels: Set<String>
     let actions: [String: () -> Void]
+    let controlEnabledStates: [String: Bool]
 }
 
 @MainActor
