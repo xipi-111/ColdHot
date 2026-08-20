@@ -24,6 +24,39 @@ struct PanelBackgroundPlaybackIntent: Equatable {
 }
 
 @MainActor
+struct PanelBackgroundPlaybackDependencies {
+    typealias ItemStatusHandler = @MainActor (
+        AVPlayerItem.Status,
+        String?
+    ) -> Void
+
+    let preparePlayerItem: @MainActor (URL) async throws -> AVPlayerItem
+    let observePlayerItemStatus: @MainActor (
+        AVPlayerItem,
+        @escaping ItemStatusHandler
+    ) -> NSKeyValueObservation
+
+    static var live: Self {
+        Self(
+            preparePlayerItem: { mediaURL in
+                let asset = AVURLAsset(url: mediaURL)
+                _ = try await asset.load(.duration)
+                return AVPlayerItem(asset: asset)
+            },
+            observePlayerItemStatus: { item, statusHandler in
+                item.observe(\.status, options: [.initial, .new]) { item, _ in
+                    let status = item.status
+                    let errorDescription = item.error?.localizedDescription
+                    DispatchQueue.main.async {
+                        statusHandler(status, errorDescription)
+                    }
+                }
+            }
+        )
+    }
+}
+
+@MainActor
 final class PanelBackgroundPlaybackController: ObservableObject {
     let player: AVQueuePlayer
 
@@ -35,17 +68,21 @@ final class PanelBackgroundPlaybackController: ObservableObject {
     private var looper: AVPlayerLooper?
     private var preparationTask: Task<Void, Never>?
     private var looperStatusObservation: NSKeyValueObservation?
+    private var currentItemObservation: NSKeyValueObservation?
     private var itemStatusObservation: NSKeyValueObservation?
     private var activeAsset: PanelBackgroundAsset?
     private var previousIntent: PanelBackgroundPlaybackIntent?
     private var hasPlaybackFailure = false
     private var didRetryCurrentAsset = false
     private var itemGeneration = 0
+    private var itemObservationSequence = 0
+    private let dependencies: PanelBackgroundPlaybackDependencies
 
-    init() {
+    init(dependencies: PanelBackgroundPlaybackDependencies? = nil) {
         let player = AVQueuePlayer()
         player.isMuted = true
         self.player = player
+        self.dependencies = dependencies ?? .live
     }
 
     func configure(asset: PanelBackgroundAsset?) {
@@ -118,12 +155,12 @@ final class PanelBackgroundPlaybackController: ObservableObject {
 
         itemGeneration += 1
         let generation = itemGeneration
-        let urlAsset = AVURLAsset(url: mediaURL)
+        let preparePlayerItem = dependencies.preparePlayerItem
         preparationTask = Task { [weak self] in
             do {
-                _ = try await urlAsset.load(.duration)
+                let templateItem = try await preparePlayerItem(mediaURL)
                 try Task.checkCancellation()
-                self?.installPlayerItem(from: urlAsset, generation: generation)
+                self?.installPlayerItem(templateItem, generation: generation)
             } catch is CancellationError {
                 return
             } catch {
@@ -132,11 +169,10 @@ final class PanelBackgroundPlaybackController: ObservableObject {
         }
     }
 
-    private func installPlayerItem(from asset: AVAsset, generation: Int) {
+    private func installPlayerItem(_ templateItem: AVPlayerItem, generation: Int) {
         guard generation == itemGeneration else { return }
         preparationTask = nil
 
-        let templateItem = AVPlayerItem(asset: asset)
         let looper = AVPlayerLooper(player: player, templateItem: templateItem)
         self.looper = looper
 
@@ -153,22 +189,19 @@ final class PanelBackgroundPlaybackController: ObservableObject {
             }
         }
 
-        guard let queuedItem = looper.loopingPlayerItems.first ?? player.items().first else {
+        currentItemObservation = player.observe(
+            \.currentItem,
+            options: [.initial, .new]
+        ) { [weak self] player, _ in
+            let item = player.currentItem
+            DispatchQueue.main.async { [weak self] in
+                self?.bindItemStatusObservation(to: item, generation: generation)
+            }
+        }
+
+        guard player.currentItem != nil else {
             handlePlaybackFailure(errorDescription: nil, generation: generation)
             return
-        }
-        itemStatusObservation = queuedItem.observe(\.status, options: [.initial, .new]) {
-            [weak self] item, _ in
-            let status = item.status
-            let errorDescription = item.error?.localizedDescription
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                self.handleItemStatus(
-                    status,
-                    errorDescription: errorDescription,
-                    generation: generation
-                )
-            }
         }
 
         if let intent = previousIntent {
@@ -176,6 +209,34 @@ final class PanelBackgroundPlaybackController: ObservableObject {
             if intent.shouldPlay {
                 player.play()
             }
+        }
+    }
+
+    private func bindItemStatusObservation(
+        to item: AVPlayerItem?,
+        generation: Int
+    ) {
+        guard generation == itemGeneration else { return }
+        if let item {
+            guard player.currentItem === item else { return }
+        } else {
+            guard player.currentItem == nil else { return }
+        }
+
+        itemObservationSequence += 1
+        let observationSequence = itemObservationSequence
+        itemStatusObservation?.invalidate()
+        itemStatusObservation = nil
+        guard let item else { return }
+
+        itemStatusObservation = dependencies.observePlayerItemStatus(item) {
+            [weak self] status, errorDescription in
+            self?.handleItemStatus(
+                status,
+                errorDescription: errorDescription,
+                generation: generation,
+                observationSequence: observationSequence
+            )
         }
     }
 
@@ -205,9 +266,11 @@ final class PanelBackgroundPlaybackController: ObservableObject {
     private func handleItemStatus(
         _ status: AVPlayerItem.Status,
         errorDescription: String?,
-        generation: Int
+        generation: Int,
+        observationSequence: Int
     ) {
-        guard generation == itemGeneration else { return }
+        guard generation == itemGeneration,
+              observationSequence == itemObservationSequence else { return }
 
         switch status {
         case .readyToPlay:
@@ -236,6 +299,9 @@ final class PanelBackgroundPlaybackController: ObservableObject {
         preparationTask = nil
         looperStatusObservation?.invalidate()
         looperStatusObservation = nil
+        currentItemObservation?.invalidate()
+        currentItemObservation = nil
+        itemObservationSequence += 1
         itemStatusObservation?.invalidate()
         itemStatusObservation = nil
         looper?.disableLooping()
@@ -253,6 +319,9 @@ final class PanelBackgroundPlaybackController: ObservableObject {
         preparationTask = nil
         looperStatusObservation?.invalidate()
         looperStatusObservation = nil
+        currentItemObservation?.invalidate()
+        currentItemObservation = nil
+        itemObservationSequence += 1
         itemStatusObservation?.invalidate()
         itemStatusObservation = nil
         looper?.disableLooping()

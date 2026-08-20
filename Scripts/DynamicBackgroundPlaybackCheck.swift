@@ -21,6 +21,7 @@ enum DynamicBackgroundPlaybackCheck {
         let videoURL = directory.appendingPathComponent("two-seconds.mp4")
         try await makeTwoSecondVideo(at: videoURL, in: directory)
         try await checkPlaybackLifecycle(videoURL: videoURL)
+        try await checkLoopBoundaryAndCurrentReplicaFailure(videoURL: videoURL)
         try await checkBoundedFailureLifecycle(in: directory)
         checkPlayerLayerBehavior()
 
@@ -184,6 +185,94 @@ enum DynamicBackgroundPlaybackCheck {
     }
 
     @MainActor
+    private static func checkLoopBoundaryAndCurrentReplicaFailure(
+        videoURL: URL
+    ) async throws {
+        let liveDependencies = PanelBackgroundPlaybackDependencies.live
+        var observedItemIDs: [ObjectIdentifier] = []
+        var firstReplicaStatusHandler: PanelBackgroundPlaybackDependencies.ItemStatusHandler?
+        let dependencies = PanelBackgroundPlaybackDependencies(
+            preparePlayerItem: liveDependencies.preparePlayerItem,
+            observePlayerItemStatus: { item, statusHandler in
+                let itemID = ObjectIdentifier(item)
+                if !observedItemIDs.contains(itemID) {
+                    observedItemIDs.append(itemID)
+                    if observedItemIDs.count == 1 {
+                        firstReplicaStatusHandler = statusHandler
+                    } else if observedItemIDs.count == 2 {
+                        Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 150_000_000)
+                            statusHandler(.failed, "Injected later-replica failure")
+                        }
+                    }
+                }
+                return liveDependencies.observePlayerItemStatus(item, statusHandler)
+            }
+        )
+        let controller = PanelBackgroundPlaybackController(dependencies: dependencies)
+        let asset = dynamicAsset(id: "loop-boundary", mediaURL: videoURL, hasAudio: false)
+        let visible = PanelBackgroundPlaybackIntent(
+            isEnabled: true,
+            isVisible: true,
+            reduceMotion: false,
+            audioRequested: false,
+            assetIsDynamic: true,
+            assetHasAudio: false
+        )
+
+        controller.configure(asset: asset)
+        controller.update(intent: visible)
+        try await wait(
+            until: {
+                controller.player.currentItem?.status == .readyToPlay
+                    && controller.player.currentTime().seconds > 0.05
+            },
+            timeout: 3,
+            diagnostic: "Loop-boundary fixture never began playback"
+        )
+        guard let firstItem = controller.player.currentItem else {
+            throw CheckFailure("Loop-boundary fixture has no first replica")
+        }
+
+        try await wait(
+            until: {
+                guard let currentItem = controller.player.currentItem else { return false }
+                let time = controller.player.currentTime().seconds
+                return currentItem !== firstItem
+                    && currentItem.status == .readyToPlay
+                    && controller.player.rate > 0
+                    && time >= 0
+                    && time < 0.75
+            },
+            timeout: 4,
+            diagnostic: "Playback did not continue into a new looper replica"
+        )
+        expect(
+            controller.playbackErrorMessage == nil,
+            "A healthy end-to-next-replica transition must not publish an error"
+        )
+        guard let firstReplicaStatusHandler else {
+            throw CheckFailure("The first replica did not receive status observation")
+        }
+        firstReplicaStatusHandler(.failed, "Injected stale-replica failure")
+        expect(
+            controller.playbackErrorMessage == nil,
+            "A stale prior-replica callback must not fail the current replica"
+        )
+
+        try await wait(
+            until: { controller.playbackErrorMessage != nil },
+            timeout: 1,
+            diagnostic: "A later current-replica failure was not observed"
+        )
+        expect(controller.player.rate == 0, "A later current-replica failure must pause")
+        expect(controller.player.isMuted, "A later current-replica failure must mute")
+        expect(controller.player.items().isEmpty, "A later failure must clear queued replicas")
+        expect(!controller.hasActiveLooper, "A later failure must tear down the looper")
+        controller.reset()
+    }
+
+    @MainActor
     private static func checkBoundedFailureLifecycle(in directory: URL) async throws {
         let validVideoURL = directory.appendingPathComponent("two-seconds.mp4")
         let visible = PanelBackgroundPlaybackIntent(
@@ -244,7 +333,18 @@ enum DynamicBackgroundPlaybackCheck {
         expect(publishedErrors.count == 1, "Recovery must retain one historical error publication")
         recoveryController.reset()
 
-        let boundedController = PanelBackgroundPlaybackController()
+        let liveDependencies = PanelBackgroundPlaybackDependencies.live
+        var preparationCount = 0
+        let countingDependencies = PanelBackgroundPlaybackDependencies(
+            preparePlayerItem: { url in
+                preparationCount += 1
+                return try await liveDependencies.preparePlayerItem(url)
+            },
+            observePlayerItemStatus: liveDependencies.observePlayerItemStatus
+        )
+        let boundedController = PanelBackgroundPlaybackController(
+            dependencies: countingDependencies
+        )
         let boundedURL = directory.appendingPathComponent("bounded-missing-video.mp4")
         let boundedAsset = dynamicAsset(
             id: "bounded-invalid",
@@ -264,9 +364,21 @@ enum DynamicBackgroundPlaybackCheck {
             timeout: 5,
             diagnostic: "Bounded-retry fixture did not fail initially"
         )
+        expect(preparationCount == 1, "Initial configuration must prepare exactly once")
+        try await pauseFor(0.50)
+        expect(
+            preparationCount == 1,
+            "An unchanged failed asset must not continuously prepare itself"
+        )
         boundedController.update(intent: visible.copy(isVisible: false))
         boundedController.update(intent: visible)
+        try await wait(
+            until: { preparationCount == 2 },
+            timeout: 1,
+            diagnostic: "The first hidden-to-visible transition did not prepare one retry"
+        )
         try await pauseFor(0.50)
+        expect(preparationCount == 2, "The first visibility transition must add one retry only")
         expect(boundedController.player.currentItem == nil, "The one retry must remain failed")
 
         try FileManager.default.copyItem(at: validVideoURL, to: boundedURL)
@@ -277,6 +389,7 @@ enum DynamicBackgroundPlaybackCheck {
             boundedController.player.currentItem == nil,
             "A second hidden-to-visible transition must not retry again"
         )
+        expect(preparationCount == 2, "A failed asset must never prepare more than twice")
         expect(boundedErrors.count == 1, "Bounded retry must not republish the same error")
 
         let replacement = dynamicAsset(
