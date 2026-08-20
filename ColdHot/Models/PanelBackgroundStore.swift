@@ -9,7 +9,6 @@ typealias PanelBackgroundPrepareImport = (
 ) async throws -> PanelBackgroundPreparedImport
 
 typealias PanelBackgroundWriteManifest = (_ data: Data, _ manifestURL: URL) throws -> Void
-typealias PanelBackgroundWriteLegacy = (_ data: Data, _ legacyURL: URL) throws -> Void
 
 @MainActor
 final class PanelBackgroundStore: ObservableObject {
@@ -28,15 +27,13 @@ final class PanelBackgroundStore: ObservableObject {
     private let fileManager: FileManager
     private let prepareImport: PanelBackgroundPrepareImport
     private let writeManifestOperation: PanelBackgroundWriteManifest
-    private let writeLegacyOperation: PanelBackgroundWriteLegacy
     private var mutationInProgress = false
 
     init(
         directoryURL: URL? = nil,
         fileManager: FileManager = .default,
         prepareImport: PanelBackgroundPrepareImport? = nil,
-        writeManifest: PanelBackgroundWriteManifest? = nil,
-        writeLegacy: PanelBackgroundWriteLegacy? = nil
+        writeManifest: PanelBackgroundWriteManifest? = nil
     ) {
         self.fileManager = fileManager
         let resolvedDirectory = directoryURL
@@ -50,9 +47,6 @@ final class PanelBackgroundStore: ObservableObject {
             try await importer.prepareImport(from: sourceURL, in: stagingDirectory)
         }
         writeManifestOperation = writeManifest ?? { data, url in
-            try data.write(to: url, options: .atomic)
-        }
-        writeLegacyOperation = writeLegacy ?? { data, url in
             try data.write(to: url, options: .atomic)
         }
 
@@ -229,111 +223,6 @@ final class PanelBackgroundStore: ObservableObject {
         }
     }
 
-    // Temporary synchronous compatibility for Settings until its async picker migration.
-    func importImage(from sourceURL: URL) throws {
-        try beginMutation()
-        defer { mutationInProgress = false }
-
-        let isAccessingSecurityScopedResource = sourceURL.startAccessingSecurityScopedResource()
-        defer {
-            if isAccessingSecurityScopedResource {
-                sourceURL.stopAccessingSecurityScopedResource()
-            }
-        }
-
-        try createStoreDirectory()
-        let stagingDirectory = directoryURL.appendingPathComponent(
-            "staging-compatibility-\(UUID().uuidString)",
-            isDirectory: true
-        )
-        do {
-            try fileManager.createDirectory(
-                at: stagingDirectory,
-                withIntermediateDirectories: true
-            )
-        } catch {
-            throw PanelBackgroundImportError.unableToWrite
-        }
-
-        let previousManifestExisted = fileManager.fileExists(atPath: manifestURL.path)
-        let previousManifestData = try? Data(contentsOf: manifestURL)
-        let previousManifest = previousManifestData.flatMap(Self.decodeManifest)
-        let previousLegacyExisted = fileManager.fileExists(atPath: fileURL.path)
-        let previousLegacyData = try? Data(contentsOf: fileURL)
-        let preparedURL = stagingDirectory.appendingPathComponent("background.png")
-        let preparedData: Data
-        do {
-            try PanelBackgroundMediaImporter.writeStaticThumbnail(
-                from: sourceURL,
-                to: preparedURL
-            )
-            preparedData = try Data(contentsOf: preparedURL)
-        } catch let error as PanelBackgroundImportError {
-            _ = removeIfPresent(stagingDirectory)
-            throw error
-        } catch {
-            _ = removeIfPresent(stagingDirectory)
-            throw PanelBackgroundImportError.unableToWrite
-        }
-        do {
-            try writeLegacyOperation(preparedData, fileURL)
-        } catch {
-            try recoverFailedCompatibilityMutation(
-                previousManifestExisted: previousManifestExisted,
-                previousManifestData: previousManifestData,
-                previousLegacyExisted: previousLegacyExisted,
-                previousLegacyData: previousLegacyData,
-                stagingDirectory: stagingDirectory
-            )
-        }
-
-        guard Self.isActualRegularFile(
-            fileURL,
-            inside: directoryURL,
-            fileManager: fileManager
-        ), let preparedImage = Self.loadImage(at: fileURL) else {
-            try recoverFailedCompatibilityMutation(
-                previousManifestExisted: previousManifestExisted,
-                previousManifestData: previousManifestData,
-                previousLegacyExisted: previousLegacyExisted,
-                previousLegacyData: previousLegacyData,
-                stagingDirectory: stagingDirectory
-            )
-        }
-
-        if previousManifestExisted {
-            do {
-                try fileManager.removeItem(at: manifestURL)
-            } catch {
-                try recoverFailedCompatibilityMutation(
-                    previousManifestExisted: previousManifestExisted,
-                    previousManifestData: previousManifestData,
-                    previousLegacyExisted: previousLegacyExisted,
-                    previousLegacyData: previousLegacyData,
-                    stagingDirectory: stagingDirectory
-                )
-            }
-        }
-
-        asset = PanelBackgroundAsset(
-            id: Self.legacyAssetID,
-            kind: .staticImage,
-            posterImage: preparedImage,
-            mediaURL: nil,
-            hasAudio: false
-        )
-        var cleanupFailed = removeFilesReferenced(by: previousManifest, excluding: nil)
-        cleanupFailed = removeIfPresent(stagingDirectory) || cleanupFailed
-        if cleanupFailed {
-            throw PanelBackgroundImportError.cleanupFailed
-        }
-    }
-
-    // Temporary synchronous compatibility for Settings until Task 6.
-    func removeImage() throws {
-        try removeBackground()
-    }
-
     private func beginMutation() throws {
         guard !mutationInProgress else {
             throw PanelBackgroundImportError.operationInProgress
@@ -430,85 +319,6 @@ final class PanelBackgroundStore: ObservableObject {
         } else if fileManager.fileExists(atPath: manifestURL.path) {
             try fileManager.removeItem(at: manifestURL)
         }
-    }
-
-    private func restoreLegacy(_ previousData: Data?) -> Bool {
-        do {
-            if let previousData {
-                try previousData.write(to: fileURL, options: .atomic)
-            } else if fileManager.fileExists(atPath: fileURL.path) {
-                try fileManager.removeItem(at: fileURL)
-            }
-            return false
-        } catch {
-            return true
-        }
-    }
-
-    private func recoverFailedCompatibilityMutation(
-        previousManifestExisted: Bool,
-        previousManifestData: Data?,
-        previousLegacyExisted: Bool,
-        previousLegacyData: Data?,
-        stagingDirectory: URL
-    ) throws -> Never {
-        if !fileMatchesSnapshot(
-            at: manifestURL,
-            existed: previousManifestExisted,
-            data: previousManifestData
-        ) {
-            if previousManifestExisted, let previousManifestData {
-                try? restoreManifest(previousManifestData)
-            } else if !previousManifestExisted {
-                try? restoreManifest(nil)
-            }
-        }
-        if !fileMatchesSnapshot(
-            at: fileURL,
-            existed: previousLegacyExisted,
-            data: previousLegacyData
-        ) {
-            if previousLegacyExisted, previousLegacyData == nil {
-                // Exact bytes are unavailable; reconciliation below adopts disk state.
-            } else {
-                _ = restoreLegacy(previousLegacyData)
-            }
-        }
-        let cleanupFailed = removeIfPresent(stagingDirectory)
-        let exactPrior = fileMatchesSnapshot(
-            at: manifestURL,
-            existed: previousManifestExisted,
-            data: previousManifestData
-        ) && fileMatchesSnapshot(
-            at: fileURL,
-            existed: previousLegacyExisted,
-            data: previousLegacyData
-        )
-        if !exactPrior,
-           fileManager.fileExists(atPath: manifestURL.path),
-           Self.loadManifestAsset(
-               from: manifestURL,
-               directoryURL: directoryURL,
-               fileManager: fileManager
-           ) == nil {
-            _ = clearInvalidManifest()
-        }
-        asset = loadAuthoritativeAssetFromDisk()
-        throw exactPrior && !cleanupFailed
-            ? PanelBackgroundImportError.unableToWrite
-            : PanelBackgroundImportError.rollbackFailed
-    }
-
-    private func fileMatchesSnapshot(
-        at url: URL,
-        existed: Bool,
-        data: Data?
-    ) -> Bool {
-        let currentlyExists = fileManager.fileExists(atPath: url.path)
-        let currentData = try? Data(contentsOf: url)
-        return currentlyExists == existed
-            && currentData == data
-            && (!currentlyExists || currentData != nil)
     }
 
     private func loadAuthoritativeAssetFromDisk() -> PanelBackgroundAsset? {

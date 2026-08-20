@@ -330,18 +330,10 @@ final class MonitorSettings: ObservableObject {
         if kind == .video { setPanelBackgroundAudioEnabled(false) }
     }
 
-    func didReplacePanelBackgroundImage() {
-        didReplacePanelBackground(kind: .staticImage)
-    }
-
     func didRemovePanelBackground() {
         setPanelBackgroundAudioEnabled(false)
         setPanelBackgroundEnabled(false)
         resetPanelBackgroundTransform()
-    }
-
-    func didRemovePanelBackgroundImage() {
-        didRemovePanelBackground()
     }
 
     func applyPreset(_ preset: MonitoringPreset) {

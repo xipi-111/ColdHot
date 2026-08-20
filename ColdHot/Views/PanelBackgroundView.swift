@@ -236,14 +236,12 @@ enum PanelExpansionBehavior {
 }
 
 struct PanelBackgroundView: View {
-    let image: NSImage?
-    let isEnabled: Bool
+    let asset: PanelBackgroundAsset?
+    let playbackController: PanelBackgroundPlaybackController
+    let playbackIntent: PanelBackgroundPlaybackIntent
     let dimOpacity: Double
     let zoom: Double
     let position: CGPoint
-    private let asset: PanelBackgroundAsset?
-    private let playbackController: PanelBackgroundPlaybackController?
-    private let playbackIntent: PanelBackgroundPlaybackIntent?
 
     init(
         asset: PanelBackgroundAsset?,
@@ -253,31 +251,12 @@ struct PanelBackgroundView: View {
         zoom: Double = 1,
         position: CGPoint = .zero
     ) {
-        image = asset?.posterImage
-        isEnabled = intent.isEnabled
-        self.dimOpacity = dimOpacity
-        self.zoom = zoom
-        self.position = position
         self.asset = asset
         playbackController = controller
         playbackIntent = intent
-    }
-
-    init(
-        image: NSImage?,
-        isEnabled: Bool,
-        dimOpacity: Double,
-        zoom: Double = 1,
-        position: CGPoint = .zero
-    ) {
-        self.image = image
-        self.isEnabled = isEnabled
         self.dimOpacity = dimOpacity
         self.zoom = zoom
         self.position = position
-        asset = nil
-        playbackController = nil
-        playbackIntent = nil
     }
 
     var body: some View {
@@ -285,23 +264,19 @@ struct PanelBackgroundView: View {
             Rectangle()
                 .fill(.regularMaterial)
 
-            if isEnabled, let image {
+            if playbackIntent.isEnabled, let asset {
                 GeometryReader { proxy in
                     let transform = PanelBackgroundTransform.resolve(
-                        imageSize: image.size,
+                        imageSize: asset.posterImage.size,
                         containerSize: proxy.size,
                         zoom: zoom,
                         position: position
                     )
                     ZStack {
-                        Image(nsImage: image)
+                        Image(nsImage: asset.posterImage)
                             .resizable()
 
-                        if let asset,
-                           asset.isDynamic,
-                           asset.mediaURL != nil,
-                           let playbackController,
-                           let playbackIntent {
+                        if asset.isDynamic, asset.mediaURL != nil {
                             PanelBackgroundDynamicPlayerLayer(
                                 assetID: asset.id,
                                 controller: playbackController,

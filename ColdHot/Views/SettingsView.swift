@@ -2,11 +2,147 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
+struct SettingsPanelBackgroundOperationResult {
+    let didCommit: Bool
+    let error: Error?
+}
+
+@MainActor
+enum SettingsPanelBackgroundOperations {
+    static func importBackground(
+        from sourceURL: URL,
+        store: PanelBackgroundStore,
+        settings: MonitorSettings
+    ) async -> SettingsPanelBackgroundOperationResult {
+        let previousAssetID = store.asset?.id
+        do {
+            try await store.importBackground(from: sourceURL)
+        } catch {
+            let didCommit = isCleanupFailure(error)
+                && store.asset?.id != previousAssetID
+                && store.asset != nil
+            if didCommit, let asset = store.asset {
+                settings.didReplacePanelBackground(kind: asset.kind)
+            }
+            return SettingsPanelBackgroundOperationResult(
+                didCommit: didCommit,
+                error: error
+            )
+        }
+
+        guard let asset = store.asset else {
+            return SettingsPanelBackgroundOperationResult(
+                didCommit: false,
+                error: PanelBackgroundImportError.unableToWrite
+            )
+        }
+        settings.didReplacePanelBackground(kind: asset.kind)
+        return SettingsPanelBackgroundOperationResult(didCommit: true, error: nil)
+    }
+
+    static func removeBackground(
+        store: PanelBackgroundStore,
+        settings: MonitorSettings
+    ) -> SettingsPanelBackgroundOperationResult {
+        let previousAssetID = store.asset?.id
+        do {
+            try store.removeBackground()
+        } catch {
+            let didCommit = previousAssetID != nil
+                && store.asset == nil
+                && isCleanupFailure(error)
+            if didCommit {
+                settings.didRemovePanelBackground()
+            }
+            return SettingsPanelBackgroundOperationResult(
+                didCommit: didCommit,
+                error: error
+            )
+        }
+
+        settings.didRemovePanelBackground()
+        return SettingsPanelBackgroundOperationResult(didCommit: true, error: nil)
+    }
+
+    private static func isCleanupFailure(_ error: Error) -> Bool {
+        guard let importError = error as? PanelBackgroundImportError else { return false }
+        if case .cleanupFailed = importError { return true }
+        return false
+    }
+}
+
+@MainActor
+final class SettingsBackgroundOperationState: ObservableObject {
+    @Published private(set) var isProcessing: Bool
+
+    init(isProcessing: Bool = false) {
+        self.isProcessing = isProcessing
+    }
+
+    func begin() {
+        isProcessing = true
+    }
+
+    func finish() {
+        isProcessing = false
+    }
+}
+
+struct SettingsPreviewAudioToggle: View {
+    let asset: PanelBackgroundAsset?
+    let isAudioEnabled: Bool
+    let reduceMotion: Bool
+    let setAudioEnabled: (Bool) -> Void
+
+    @Environment(\.panelAccessibilityIdentifierReporter) private var identifierReporter
+    @Environment(\.panelAccessibilityLabelReporter) private var labelReporter
+    @Environment(\.panelAccessibilityActionReporter) private var actionReporter
+
+    private let identifier = "settings-preview-audio-toggle"
+
+    var body: some View {
+        if asset?.kind == .video, asset?.hasAudio == true {
+            Button(action: toggleAudio) {
+                Image(systemName: isAudioEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
+            }
+            .buttonStyle(.plain)
+            .disabled(reduceMotion)
+            .accessibilityIdentifier(identifier)
+            .accessibilityLabel(accessibilityLabel)
+            .help(accessibilityLabel)
+            .onAppear {
+                reportAccessibility()
+                actionReporter?(identifier, toggleAudio)
+            }
+            .onChange(of: accessibilityLabel) { _, _ in
+                reportAccessibility()
+            }
+        }
+    }
+
+    private var accessibilityLabel: String {
+        isAudioEnabled ? "关闭预览声音" : "开启预览声音"
+    }
+
+    private func toggleAudio() {
+        guard !reduceMotion else { return }
+        setAudioEnabled(!isAudioEnabled)
+    }
+
+    private func reportAccessibility() {
+        identifierReporter?(identifier)
+        labelReporter?(accessibilityLabel)
+    }
+}
+
 struct SettingsView: View {
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @ObservedObject var settings: MonitorSettings
     @ObservedObject var panelBackgroundStore: PanelBackgroundStore
     @ObservedObject var monitor: PerformanceMonitor
     @ObservedObject var updateController: UpdateController
+    @StateObject private var previewSession: SettingsPanelBackgroundPreviewSession
+    @StateObject private var backgroundOperationState: SettingsBackgroundOperationState
     @State private var selectedPage: SettingsPage = .appearance
     @State private var expandedMetrics: Set<MetricKind> = []
     @State private var expandedThresholdMetrics: Set<MetricKind> = []
@@ -15,19 +151,31 @@ struct SettingsView: View {
     @State private var backgroundErrorMessage: String?
     @State private var notificationAuthorizationDenied = false
     @State private var backgroundDragStartPosition: CGPoint?
+    private let reduceMotionOverride: Bool?
 
     init(
         settings: MonitorSettings,
         panelBackgroundStore: PanelBackgroundStore,
         monitor: PerformanceMonitor,
         updateController: UpdateController,
-        initialPage: SettingsPage = .appearance
+        initialPage: SettingsPage = .appearance,
+        previewSession: SettingsPanelBackgroundPreviewSession? = nil,
+        backgroundOperationState: SettingsBackgroundOperationState? = nil,
+        reduceMotionOverride: Bool? = nil
     ) {
         self.settings = settings
         self.panelBackgroundStore = panelBackgroundStore
         self.monitor = monitor
         self.updateController = updateController
         _selectedPage = State(initialValue: initialPage)
+        _previewSession = StateObject(
+            wrappedValue: previewSession
+                ?? SettingsPanelBackgroundPreviewSession(initialPage: initialPage)
+        )
+        _backgroundOperationState = StateObject(
+            wrappedValue: backgroundOperationState ?? SettingsBackgroundOperationState()
+        )
+        self.reduceMotionOverride = reduceMotionOverride
     }
 
     var body: some View {
@@ -50,12 +198,12 @@ struct SettingsView: View {
         }
         .fileImporter(
             isPresented: $isChoosingBackground,
-            allowedContentTypes: [.image],
+            allowedContentTypes: [.image, .movie, .mpeg4Movie, .quickTimeMovie],
             allowsMultipleSelection: false,
             onCompletion: handleBackgroundSelection
         )
         .alert(
-            "无法设置背景图片",
+            "无法设置背景",
             isPresented: Binding(
                 get: { backgroundErrorMessage != nil },
                 set: { isPresented in
@@ -71,6 +219,37 @@ struct SettingsView: View {
             Button("好", role: .cancel) {}
         } message: {
             Text("请在系统设置的通知页面允许 ColdHot 发送通知。")
+        }
+        .onAppear {
+            previewSession.didAppear(
+                asset: panelBackgroundStore.asset,
+                isEnabled: settings.isPanelBackgroundEnabled,
+                reduceMotion: effectiveReduceMotion
+            )
+        }
+        .onDisappear {
+            previewSession.didDisappear()
+        }
+        .onChange(of: selectedPage) { _, page in
+            previewSession.didSelectPage(
+                page,
+                asset: panelBackgroundStore.asset,
+                isEnabled: settings.isPanelBackgroundEnabled,
+                reduceMotion: effectiveReduceMotion
+            )
+        }
+        .onChange(of: panelBackgroundStore.asset?.id) { _, _ in
+            previewSession.didChangeAsset(
+                panelBackgroundStore.asset,
+                isEnabled: settings.isPanelBackgroundEnabled,
+                reduceMotion: effectiveReduceMotion
+            )
+        }
+        .onChange(of: settings.isPanelBackgroundEnabled) { _, _ in
+            synchronizePreviewPlayback()
+        }
+        .onChange(of: effectiveReduceMotion) { _, _ in
+            synchronizePreviewPlayback()
         }
     }
 
@@ -99,12 +278,48 @@ struct SettingsView: View {
 
                 HStack(alignment: .top, spacing: columns.spacing) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("菜单面板真实范围")
-                            .font(.system(size: 14, weight: .semibold))
+                        HStack(spacing: 8) {
+                            Text("菜单面板真实范围")
+                                .font(.system(size: 14, weight: .semibold))
+                            Spacer(minLength: 0)
+                            SettingsPreviewAudioToggle(
+                                asset: panelBackgroundStore.asset,
+                                isAudioEnabled: previewSession.isAudioRequested,
+                                reduceMotion: effectiveReduceMotion,
+                                setAudioEnabled: setPreviewAudioEnabled
+                            )
+                        }
+
+                        if showsPreviewAudioToggle {
+                            Text("仅本次预览，离开后恢复静音")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .settingsAccessibilityLabel("仅本次预览，离开后恢复静音")
+                        }
+
+                        if panelBackgroundPreviewIntent.shouldShowReduceMotionMessage {
+                            Text("减少动态效果已开启，动态背景与声音已暂停")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .settingsAccessibilityIdentifier(
+                                    "settings-preview-reduce-motion-message"
+                                )
+                                .settingsAccessibilityLabel(
+                                    "减少动态效果已开启，动态背景与声音已暂停"
+                                )
+                        }
+
+                        if let playbackError = previewSession.controller.playbackErrorMessage {
+                            Text(playbackError)
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        }
+
                         ScaledSettingsPreview(maximumHeight: columns.previewHeight) {
                             PanelAppearancePreview(
-                                image: panelBackgroundStore.image,
-                                isBackgroundEnabled: settings.isPanelBackgroundEnabled,
+                                asset: panelBackgroundStore.asset,
+                                controller: previewSession.controller,
+                                intent: panelBackgroundPreviewIntent,
                                 dimOpacity: settings.panelBackgroundDimOpacity,
                                 backgroundZoom: settings.panelBackgroundZoom,
                                 backgroundPosition: panelBackgroundPosition,
@@ -468,16 +683,23 @@ struct SettingsView: View {
 
     @ViewBuilder
     private func panelBackgroundSettings(sliderRowHeight: CGFloat) -> some View {
-        if panelBackgroundStore.image != nil {
+        if let asset = panelBackgroundStore.asset {
             SettingsRow {
                 HStack(spacing: 10) {
-                    Image(systemName: "photo")
+                    Image(systemName: asset.kind == .staticImage ? "photo" : "film")
                         .foregroundStyle(.secondary)
-                    Text("自定义图片")
+                    Text(backgroundResourceLabel(for: asset.kind))
                         .font(.headline)
+                        .settingsAccessibilityLabel(backgroundResourceLabel(for: asset.kind))
                     Spacer()
-                    Button("更换图片…") { isChoosingBackground = true }
+                    Button("更换背景…") { isChoosingBackground = true }
+                        .disabled(backgroundOperationState.isProcessing)
+                        .settingsAccessibilityLabel("更换背景…")
                 }
+            }
+            if backgroundOperationState.isProcessing {
+                SettingsSectionDivider()
+                backgroundProcessingRow
             }
             SettingsSectionDivider()
             SettingsRow {
@@ -631,14 +853,15 @@ struct SettingsView: View {
             SettingsSectionDivider()
             SettingsRow(minHeight: 40) {
                 HStack {
-                    Text("图片仅保存在本机")
+                    Text("背景仅保存在本机")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
                     Button("移除", role: .destructive) {
-                        removeBackgroundImage()
+                        removeBackground()
                     }
                     .buttonStyle(.plain)
+                    .disabled(backgroundOperationState.isProcessing)
                 }
             }
         } else {
@@ -651,16 +874,33 @@ struct SettingsView: View {
                         .background(.quaternary, in: RoundedRectangle(cornerRadius: 9))
 
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("使用自己的图片")
+                        Text("自定义背景")
                             .font(.headline)
-                        Text("支持系统可读取的 PNG、JPEG、HEIC 和 TIFF 图片")
+                            .settingsAccessibilityLabel("自定义背景")
+                        Text("支持系统可读取的图片、GIF 与视频")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                            .settingsAccessibilityLabel("图片、GIF 与视频")
                     }
                     Spacer()
-                    Button("选择图片…") { isChoosingBackground = true }
+                    Button("选择背景…") { isChoosingBackground = true }
+                        .disabled(backgroundOperationState.isProcessing)
+                        .settingsAccessibilityLabel("选择背景…")
                 }
             }
+            if backgroundOperationState.isProcessing {
+                SettingsSectionDivider()
+                backgroundProcessingRow
+            }
+        }
+    }
+
+    private var backgroundProcessingRow: some View {
+        SettingsRow {
+            ProgressView("正在处理动态背景…")
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .settingsAccessibilityIdentifier("settings-background-processing")
+                .settingsAccessibilityLabel("正在处理动态背景…")
         }
     }
 
@@ -748,6 +988,23 @@ struct SettingsView: View {
         }
     }
 
+    private var effectiveReduceMotion: Bool {
+        reduceMotionOverride ?? accessibilityReduceMotion
+    }
+
+    private var showsPreviewAudioToggle: Bool {
+        panelBackgroundStore.asset?.kind == .video
+            && panelBackgroundStore.asset?.hasAudio == true
+    }
+
+    private var panelBackgroundPreviewIntent: PanelBackgroundPlaybackIntent {
+        previewSession.intent(
+            asset: panelBackgroundStore.asset,
+            isEnabled: settings.isPanelBackgroundEnabled,
+            reduceMotion: effectiveReduceMotion
+        )
+    }
+
     private var hasLowReadability: Bool {
         guard settings.isPanelBackgroundEnabled && panelBackgroundStore.hasImage else {
             return false
@@ -813,11 +1070,24 @@ struct SettingsView: View {
         switch result {
         case .success(let urls):
             guard let url = urls.first else { return }
-            do {
-                try panelBackgroundStore.importImage(from: url)
-                settings.didReplacePanelBackgroundImage()
-            } catch {
-                backgroundErrorMessage = error.localizedDescription
+            Task { @MainActor in
+                backgroundOperationState.begin()
+                let result = await SettingsPanelBackgroundOperations.importBackground(
+                    from: url,
+                    store: panelBackgroundStore,
+                    settings: settings
+                )
+                backgroundOperationState.finish()
+                if result.didCommit {
+                    previewSession.didChangeAsset(
+                        panelBackgroundStore.asset,
+                        isEnabled: settings.isPanelBackgroundEnabled,
+                        reduceMotion: effectiveReduceMotion
+                    )
+                }
+                if let error = result.error, !(error is CancellationError) {
+                    backgroundErrorMessage = error.localizedDescription
+                }
             }
         case .failure(let error):
             let cocoaError = error as NSError
@@ -829,18 +1099,53 @@ struct SettingsView: View {
         }
     }
 
-    private func removeBackgroundImage() {
-        do {
-            try panelBackgroundStore.removeImage()
-            settings.didRemovePanelBackgroundImage()
-        } catch {
+    private func removeBackground() {
+        backgroundOperationState.begin()
+        let result = SettingsPanelBackgroundOperations.removeBackground(
+            store: panelBackgroundStore,
+            settings: settings
+        )
+        backgroundOperationState.finish()
+        if result.didCommit {
+            previewSession.didChangeAsset(
+                panelBackgroundStore.asset,
+                isEnabled: settings.isPanelBackgroundEnabled,
+                reduceMotion: effectiveReduceMotion
+            )
+        }
+        if let error = result.error {
             backgroundErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func setPreviewAudioEnabled(_ enabled: Bool) {
+        previewSession.setAudioRequested(
+            enabled,
+            asset: panelBackgroundStore.asset,
+            isEnabled: settings.isPanelBackgroundEnabled,
+            reduceMotion: effectiveReduceMotion
+        )
+    }
+
+    private func synchronizePreviewPlayback() {
+        previewSession.synchronize(
+            asset: panelBackgroundStore.asset,
+            isEnabled: settings.isPanelBackgroundEnabled,
+            reduceMotion: effectiveReduceMotion
+        )
+    }
+
+    private func backgroundResourceLabel(for kind: PanelBackgroundMediaKind) -> String {
+        switch kind {
+        case .staticImage: "自定义图片"
+        case .convertedGIF: "动态 GIF"
+        case .video: "视频背景"
         }
     }
 
     @ViewBuilder
     private func backgroundAdjustmentOverlay(size: CGSize) -> some View {
-        if settings.isPanelBackgroundEnabled, let image = panelBackgroundStore.image {
+        if settings.isPanelBackgroundEnabled, let asset = panelBackgroundStore.asset {
             Color.clear
                 .contentShape(Rectangle())
                 .gesture(
@@ -852,7 +1157,7 @@ struct SettingsView: View {
                                 backgroundDragStartPosition = start
                             }
                             let transform = PanelBackgroundTransform.resolve(
-                                imageSize: image.size,
+                                imageSize: asset.posterImage.size,
                                 containerSize: size,
                                 zoom: settings.panelBackgroundZoom,
                                 position: start
@@ -1133,12 +1438,20 @@ private final class SettingsWindowConfigurationView: NSView {
     }
 
     func configureWindow() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self, let window = self.window else { return }
-            let shouldSetInitialSize = self.configuredWindow !== window
-            self.observeWindowIfNeeded(window)
-            self.applyConfiguration(to: window, setInitialSize: shouldSetInitialSize)
+        guard let window else {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let window = self.window else { return }
+                self.configure(window)
+            }
+            return
         }
+        configure(window)
+    }
+
+    private func configure(_ window: NSWindow) {
+        let shouldSetInitialSize = configuredWindow !== window
+        observeWindowIfNeeded(window)
+        applyConfiguration(to: window, setInitialSize: shouldSetInitialSize)
     }
 
     private func applyConfiguration(to window: NSWindow, setInitialSize: Bool = false) {

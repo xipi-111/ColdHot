@@ -1,9 +1,140 @@
 import SwiftUI
 import AppKit
 
+@MainActor
+final class SettingsPanelBackgroundPreviewSession: ObservableObject {
+    let controller: PanelBackgroundPlaybackController
+    @Published private(set) var isAudioRequested = false
+
+    private var selectedPage: SettingsPage
+    private var isRootVisible = false
+    private var synchronizationGeneration = 0
+
+    init(
+        controller: PanelBackgroundPlaybackController? = nil,
+        initialPage: SettingsPage = .appearance
+    ) {
+        self.controller = controller ?? PanelBackgroundPlaybackController()
+        selectedPage = initialPage
+    }
+
+    func didAppear(
+        asset: PanelBackgroundAsset?,
+        isEnabled: Bool,
+        reduceMotion: Bool
+    ) {
+        isRootVisible = true
+        synchronizationGeneration &+= 1
+        let generation = synchronizationGeneration
+        Task { @MainActor [weak self] in
+            await Task.yield()
+            guard let self,
+                  self.isRootVisible,
+                  self.synchronizationGeneration == generation else {
+                return
+            }
+            self.synchronizeImmediately(
+                asset: asset,
+                isEnabled: isEnabled,
+                reduceMotion: reduceMotion
+            )
+        }
+    }
+
+    func didSelectPage(
+        _ page: SettingsPage,
+        asset: PanelBackgroundAsset?,
+        isEnabled: Bool,
+        reduceMotion: Bool
+    ) {
+        selectedPage = page
+        if page != .appearance {
+            isAudioRequested = false
+        }
+        synchronize(asset: asset, isEnabled: isEnabled, reduceMotion: reduceMotion)
+    }
+
+    func didChangeAsset(
+        _ asset: PanelBackgroundAsset?,
+        isEnabled: Bool,
+        reduceMotion: Bool
+    ) {
+        isAudioRequested = false
+        synchronize(asset: asset, isEnabled: isEnabled, reduceMotion: reduceMotion)
+    }
+
+    func didDisappear() {
+        synchronizationGeneration &+= 1
+        isRootVisible = false
+        isAudioRequested = false
+        controller.reset()
+    }
+
+    func setAudioRequested(
+        _ requested: Bool,
+        asset: PanelBackgroundAsset?,
+        isEnabled: Bool,
+        reduceMotion: Bool
+    ) {
+        guard isRootVisible,
+              selectedPage == .appearance,
+              !reduceMotion,
+              asset?.kind == .video,
+              asset?.hasAudio == true else {
+            return
+        }
+        isAudioRequested = requested
+        synchronize(asset: asset, isEnabled: isEnabled, reduceMotion: reduceMotion)
+    }
+
+    func synchronize(
+        asset: PanelBackgroundAsset?,
+        isEnabled: Bool,
+        reduceMotion: Bool
+    ) {
+        synchronizationGeneration &+= 1
+        synchronizeImmediately(
+            asset: asset,
+            isEnabled: isEnabled,
+            reduceMotion: reduceMotion
+        )
+    }
+
+    private func synchronizeImmediately(
+        asset: PanelBackgroundAsset?,
+        isEnabled: Bool,
+        reduceMotion: Bool
+    ) {
+        controller.configure(asset: asset?.isDynamic == true ? asset : nil)
+        controller.update(
+            intent: intent(
+                asset: asset,
+                isEnabled: isEnabled,
+                reduceMotion: reduceMotion
+            )
+        )
+    }
+
+    func intent(
+        asset: PanelBackgroundAsset?,
+        isEnabled: Bool,
+        reduceMotion: Bool
+    ) -> PanelBackgroundPlaybackIntent {
+        PanelBackgroundPlaybackIntent(
+            isEnabled: isEnabled,
+            isVisible: isRootVisible && selectedPage == .appearance,
+            reduceMotion: reduceMotion,
+            audioRequested: isAudioRequested,
+            assetIsDynamic: asset?.isDynamic == true,
+            assetHasAudio: asset?.hasAudio == true
+        )
+    }
+}
+
 struct PanelAppearancePreview: View {
-    let image: NSImage?
-    let isBackgroundEnabled: Bool
+    let asset: PanelBackgroundAsset?
+    let playbackController: PanelBackgroundPlaybackController
+    let playbackIntent: PanelBackgroundPlaybackIntent
     let dimOpacity: Double
     let backgroundZoom: Double
     let backgroundPosition: CGPoint
@@ -13,9 +144,6 @@ struct PanelAppearancePreview: View {
     let progressOpacity: Double
     let enabledMetrics: [MetricKind]
     let showsDockQuickControl: Bool
-    private let asset: PanelBackgroundAsset?
-    private let playbackController: PanelBackgroundPlaybackController?
-    private let playbackIntent: PanelBackgroundPlaybackIntent?
 
     init(
         asset: PanelBackgroundAsset?,
@@ -31,37 +159,9 @@ struct PanelAppearancePreview: View {
         enabledMetrics: [MetricKind],
         showsDockQuickControl: Bool
     ) {
-        image = asset?.posterImage
-        isBackgroundEnabled = intent.isEnabled
-        self.dimOpacity = dimOpacity
-        self.backgroundZoom = backgroundZoom
-        self.backgroundPosition = backgroundPosition
-        self.cardOpacity = cardOpacity
-        self.primaryTextOpacity = primaryTextOpacity
-        self.secondaryTextOpacity = secondaryTextOpacity
-        self.progressOpacity = progressOpacity
-        self.enabledMetrics = enabledMetrics
-        self.showsDockQuickControl = showsDockQuickControl
         self.asset = asset
         playbackController = controller
         playbackIntent = intent
-    }
-
-    init(
-        image: NSImage?,
-        isBackgroundEnabled: Bool,
-        dimOpacity: Double,
-        backgroundZoom: Double,
-        backgroundPosition: CGPoint,
-        cardOpacity: Double,
-        primaryTextOpacity: Double,
-        secondaryTextOpacity: Double,
-        progressOpacity: Double,
-        enabledMetrics: [MetricKind],
-        showsDockQuickControl: Bool
-    ) {
-        self.image = image
-        self.isBackgroundEnabled = isBackgroundEnabled
         self.dimOpacity = dimOpacity
         self.backgroundZoom = backgroundZoom
         self.backgroundPosition = backgroundPosition
@@ -71,9 +171,6 @@ struct PanelAppearancePreview: View {
         self.progressOpacity = progressOpacity
         self.enabledMetrics = enabledMetrics
         self.showsDockQuickControl = showsDockQuickControl
-        asset = nil
-        playbackController = nil
-        playbackIntent = nil
     }
 
     var body: some View {
@@ -121,31 +218,21 @@ struct PanelAppearancePreview: View {
         }
         .frame(width: PanelLayout.width)
         .background {
-            if let playbackController, let playbackIntent {
-                PanelBackgroundView(
-                    asset: asset,
-                    controller: playbackController,
-                    intent: playbackIntent,
-                    dimOpacity: dimOpacity,
-                    zoom: backgroundZoom,
-                    position: backgroundPosition
-                )
-            } else {
-                PanelBackgroundView(
-                    image: image,
-                    isEnabled: isBackgroundEnabled,
-                    dimOpacity: dimOpacity,
-                    zoom: backgroundZoom,
-                    position: backgroundPosition
-                )
-            }
+            PanelBackgroundView(
+                asset: asset,
+                controller: playbackController,
+                intent: playbackIntent,
+                dimOpacity: dimOpacity,
+                zoom: backgroundZoom,
+                position: backgroundPosition
+            )
         }
         .panelReadability(
             cardOpacity: cardOpacity,
             primaryTextOpacity: primaryTextOpacity,
             secondaryTextOpacity: secondaryTextOpacity,
             progressOpacity: progressOpacity,
-            usesCustomBackground: isBackgroundEnabled && image != nil
+            usesCustomBackground: playbackIntent.isEnabled && asset != nil
         )
         .clipped()
         .allowsHitTesting(false)

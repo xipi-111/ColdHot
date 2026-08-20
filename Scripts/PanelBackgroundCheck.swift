@@ -9,6 +9,7 @@ enum PanelBackgroundCheck {
     @MainActor
     static func main() throws {
         checkSettingsPersistence()
+        checkSettingsPreviewLifecyclePolicy()
         checkBackgroundTransformGeometry()
         try checkPreviewLiveTransformWiring()
         try runAsyncCheck {
@@ -69,7 +70,7 @@ enum PanelBackgroundCheck {
 
         initial.setPanelBackgroundZoom(1.5)
         initial.setPanelBackgroundPosition(x: 0.4, y: -0.6)
-        initial.didReplacePanelBackgroundImage()
+        initial.didReplacePanelBackground(kind: .staticImage)
         expect(initial.isPanelBackgroundEnabled)
         expect(initial.panelBackgroundZoom == 1)
         expect(initial.panelBackgroundPositionX == 0)
@@ -77,7 +78,7 @@ enum PanelBackgroundCheck {
 
         initial.setPanelBackgroundZoom(1.8)
         initial.setPanelBackgroundPosition(x: -0.7, y: 0.3)
-        initial.didRemovePanelBackgroundImage()
+        initial.didRemovePanelBackground()
         expect(!initial.isPanelBackgroundEnabled)
         expect(initial.panelBackgroundZoom == 1)
         expect(initial.panelBackgroundPositionX == 0)
@@ -148,6 +149,98 @@ enum PanelBackgroundCheck {
         let migratedRestored = MonitorSettings(defaults: defaults)
         expect(migratedRestored.panelPrimaryTextOpacity == 0.80)
         expect(migratedRestored.panelSecondaryTextOpacity == 0.65)
+    }
+
+    @MainActor
+    private static func checkSettingsPreviewLifecyclePolicy() {
+        let poster = solidImage(width: 640, height: 360, color: .systemBlue)
+        let audioVideo = PanelBackgroundAsset(
+            id: "settings-preview-audio",
+            kind: .video,
+            posterImage: poster,
+            mediaURL: URL(fileURLWithPath: "/tmp/settings-preview-audio.mov"),
+            hasAudio: true
+        )
+        let replacement = PanelBackgroundAsset(
+            id: "settings-preview-replacement",
+            kind: .convertedGIF,
+            posterImage: poster,
+            mediaURL: URL(fileURLWithPath: "/tmp/settings-preview-replacement.mp4"),
+            hasAudio: false
+        )
+        let session = SettingsPanelBackgroundPreviewSession()
+        session.didAppear(asset: audioVideo, isEnabled: true, reduceMotion: false)
+        session.setAudioRequested(
+            true,
+            asset: audioVideo,
+            isEnabled: true,
+            reduceMotion: false
+        )
+        expect(session.isAudioRequested)
+        expect(!session.controller.player.isMuted)
+
+        session.didSelectPage(
+            .metrics,
+            asset: audioVideo,
+            isEnabled: true,
+            reduceMotion: false
+        )
+        expect(!session.isAudioRequested)
+        expect(session.controller.player.isMuted)
+
+        session.didSelectPage(
+            .appearance,
+            asset: audioVideo,
+            isEnabled: true,
+            reduceMotion: false
+        )
+        session.setAudioRequested(
+            true,
+            asset: audioVideo,
+            isEnabled: true,
+            reduceMotion: false
+        )
+        session.didChangeAsset(
+            replacement,
+            isEnabled: true,
+            reduceMotion: false
+        )
+        expect(!session.isAudioRequested)
+        expect(session.controller.activeAssetID == replacement.id)
+
+        session.setAudioRequested(
+            true,
+            asset: audioVideo,
+            isEnabled: true,
+            reduceMotion: false
+        )
+        session.didDisappear()
+        expect(!session.isAudioRequested)
+        expect(session.controller.activeAssetID == nil)
+
+        session.didAppear(asset: audioVideo, isEnabled: true, reduceMotion: false)
+        session.setAudioRequested(
+            true,
+            asset: audioVideo,
+            isEnabled: true,
+            reduceMotion: false
+        )
+        expect(session.isAudioRequested)
+        session.didChangeAsset(nil, isEnabled: true, reduceMotion: false)
+        expect(!session.isAudioRequested)
+        expect(session.controller.activeAssetID == nil)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        expect(session.controller.activeAssetID == nil)
+
+        session.didAppear(asset: audioVideo, isEnabled: true, reduceMotion: true)
+        let reducedIntent = session.intent(
+            asset: audioVideo,
+            isEnabled: true,
+            reduceMotion: true
+        )
+        expect(!reducedIntent.shouldPlay)
+        expect(reducedIntent.shouldMute)
+        expect(reducedIntent.shouldShowReduceMotionMessage)
     }
 
     private static func checkBackgroundTransformGeometry() {
@@ -530,9 +623,24 @@ enum PanelBackgroundCheck {
             enabledMetrics: MetricKind.allCases,
             showsDockQuickControl: true
         )
+        let staticAsset = PanelBackgroundAsset(
+            id: "preview-static",
+            kind: .staticImage,
+            posterImage: solidImage(width: 800, height: 1_200, color: .systemBlue),
+            mediaURL: nil,
+            hasAudio: false
+        )
         let preview = PanelAppearancePreview(
-            image: solidImage(width: 800, height: 1_200, color: .systemBlue),
-            isBackgroundEnabled: true,
+            asset: staticAsset,
+            controller: PanelBackgroundPlaybackController(),
+            intent: PanelBackgroundPlaybackIntent(
+                isEnabled: true,
+                isVisible: true,
+                reduceMotion: false,
+                audioRequested: false,
+                assetIsDynamic: false,
+                assetHasAudio: false
+            ),
             dimOpacity: 0.35,
             backgroundZoom: 1.4,
             backgroundPosition: CGPoint(x: -0.25, y: 0.5),
@@ -839,9 +947,24 @@ enum PanelBackgroundCheck {
         guard let image = NSImage(contentsOfFile: backgroundPath) else {
             fatalError("Unable to load preview background")
         }
+        let asset = PanelBackgroundAsset(
+            id: "snapshot-static",
+            kind: .staticImage,
+            posterImage: image,
+            mediaURL: nil,
+            hasAudio: false
+        )
         let preview = PanelAppearancePreview(
-            image: image,
-            isBackgroundEnabled: true,
+            asset: asset,
+            controller: PanelBackgroundPlaybackController(),
+            intent: PanelBackgroundPlaybackIntent(
+                isEnabled: true,
+                isVisible: true,
+                reduceMotion: false,
+                audioRequested: false,
+                assetIsDynamic: false,
+                assetHasAudio: false
+            ),
             dimOpacity: 0.35,
             backgroundZoom: 1.4,
             backgroundPosition: CGPoint(x: -0.25, y: 0.5),
@@ -972,9 +1095,24 @@ enum PanelBackgroundCheck {
         position: CGPoint = .zero
     ) -> NSColor {
         let side: CGFloat = 100
+        let asset = PanelBackgroundAsset(
+            id: "render-static",
+            kind: .staticImage,
+            posterImage: image,
+            mediaURL: nil,
+            hasAudio: false
+        )
         let content = PanelBackgroundView(
-            image: image,
-            isEnabled: true,
+            asset: asset,
+            controller: PanelBackgroundPlaybackController(),
+            intent: PanelBackgroundPlaybackIntent(
+                isEnabled: true,
+                isVisible: true,
+                reduceMotion: false,
+                audioRequested: false,
+                assetIsDynamic: false,
+                assetHasAudio: false
+            ),
             dimOpacity: dimOpacity,
             zoom: zoom,
             position: position

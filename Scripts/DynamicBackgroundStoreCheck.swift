@@ -19,7 +19,6 @@ enum DynamicBackgroundStoreCheck {
         defer { try? fileManager.removeItem(at: rootDirectory) }
 
         try checkLegacyFallback(in: rootDirectory)
-        try checkSynchronousCompatibility(in: rootDirectory)
         try await checkTransactionalImports(in: rootDirectory)
         try await checkMutationIsolationAndCancellation(in: rootDirectory)
         try await checkImporterVideoCancellation(in: rootDirectory)
@@ -27,37 +26,8 @@ enum DynamicBackgroundStoreCheck {
         try await checkTypeResolutionAndUnknownExtensionLimit(in: rootDirectory)
         try await checkInjectedTransactionFailures(in: rootDirectory)
         try await checkCorruptManifestRestorationFailure(in: rootDirectory)
-        try await checkSynchronousTransactionFailures(in: rootDirectory)
         try await checkStartupManifestHardening(in: rootDirectory)
         print("Dynamic background store checks passed")
-    }
-
-    @MainActor
-    private static func checkSynchronousCompatibility(in rootDirectory: URL) throws {
-        let directory = rootDirectory.appendingPathComponent("compatibility", isDirectory: true)
-        let sourceURL = rootDirectory.appendingPathComponent("compatibility-source.png")
-        try DynamicBackgroundTestMedia.makePNG(
-            at: sourceURL,
-            width: 2_400,
-            height: 1_200
-        )
-        let store = PanelBackgroundStore(directoryURL: directory)
-        try store.importImage(from: sourceURL)
-        expect(store.asset?.kind == .staticImage, "The temporary sync API must remain static-only")
-        expect(store.fileURL.lastPathComponent == "background.png", "The sync API must retain its legacy path")
-        try expect(
-            try pixelSize(at: store.fileURL) == CGSize(width: 1_600, height: 800),
-            "The sync API must retain the existing thumbnail behavior"
-        )
-        expect(
-            !FileManager.default.fileExists(
-                atPath: directory.appendingPathComponent("manifest.json").path
-            ),
-            "The temporary sync path must not interfere with async manifest transactions"
-        )
-        try store.removeImage()
-        expect(!store.hasImage, "The temporary sync removal API must clear the asset")
-        expect(!FileManager.default.fileExists(atPath: store.fileURL.path), "Sync removal must delete legacy PNG")
     }
 
     @MainActor
@@ -317,10 +287,6 @@ enum DynamicBackgroundStoreCheck {
             try await store.importBackground(from: sourceURL)
             fatalError("A second async import must be rejected while mutation is active")
         } catch PanelBackgroundImportError.operationInProgress {}
-        do {
-            try store.importImage(from: sourceURL)
-            fatalError("The synchronous compatibility API must reject an active async import")
-        } catch PanelBackgroundImportError.operationInProgress {}
         await gate.resume()
         try await firstImport.value
 
@@ -370,7 +336,7 @@ enum DynamicBackgroundStoreCheck {
             try stagingEntries(in: cancellationDirectory).isEmpty,
             "Cancellation must roll back staging files"
         )
-        try cancellationStore.importImage(from: sourceURL)
+        try await cancellationStore.importBackground(from: sourceURL)
         expect(cancellationStore.hasImage, "Cancellation must release the mutation guard")
     }
 
@@ -699,91 +665,6 @@ enum DynamicBackgroundStoreCheck {
             PanelBackgroundStore(directoryURL: directory, fileManager: fileManager).asset == nil,
             "Invalid-manifest recovery must remain coherent after restart"
         )
-    }
-
-    @MainActor
-    private static func checkSynchronousTransactionFailures(in rootDirectory: URL) async throws {
-        let fileManager = TransactionFaultFileManager()
-        let directory = rootDirectory.appendingPathComponent("sync-faults", isDirectory: true)
-        fileManager.manifestURL = directory.appendingPathComponent("manifest.json")
-        let gifSource = rootDirectory.appendingPathComponent("sync-baseline.gif")
-        let staticSource = rootDirectory.appendingPathComponent("sync-replacement.png")
-        try DynamicBackgroundTestMedia.makeTwoFrameGIF(at: gifSource)
-        try DynamicBackgroundTestMedia.makePNG(at: staticSource)
-        let store = PanelBackgroundStore(
-            directoryURL: directory,
-            fileManager: fileManager,
-            writeManifest: fileManager.writeManifest,
-            writeLegacy: fileManager.writeLegacy
-        )
-        try await store.importBackground(from: gifSource)
-
-        let priorID = store.asset?.id
-        let priorManifest = try manifestData(in: directory)
-        let priorFiles = try fileSnapshot(in: directory)
-
-        func expectExactPrior(_ message: String) throws {
-            expect(store.asset?.id == priorID, "\(message): asset identity changed")
-            try expect(try manifestData(in: directory) == priorManifest, "\(message): manifest changed")
-            try expect(try fileSnapshot(in: directory) == priorFiles, "\(message): files changed")
-            try expect(try stagingEntries(in: directory).isEmpty, "\(message): staging leaked")
-            fileManager.resetFaults()
-            expect(
-                PanelBackgroundStore(directoryURL: directory, fileManager: fileManager).asset?.id
-                    == priorID,
-                "\(message): restarted asset changed"
-            )
-        }
-
-        fileManager.resetFaults()
-        fileManager.failLegacyWriteAfterReplacement = true
-        do {
-            try store.importImage(from: staticSource)
-            fatalError("Post-replacement legacy write failure must throw")
-        } catch PanelBackgroundImportError.unableToWrite {}
-        try expectExactPrior("Post-replacement legacy write failure")
-
-        fileManager.resetFaults()
-        fileManager.failRemoveAfterSideEffectPaths = [
-            directory.appendingPathComponent("manifest.json").path
-        ]
-        do {
-            try store.importImage(from: staticSource)
-            fatalError("Post-removal manifest failure must throw")
-        } catch PanelBackgroundImportError.unableToWrite {}
-        try expectExactPrior("Post-removal manifest failure")
-
-        fileManager.resetFaults()
-        fileManager.failRemovePaths = [directory.appendingPathComponent("manifest.json").path]
-        do {
-            try store.importImage(from: staticSource)
-            fatalError("Compatibility manifest-removal failure must throw")
-        } catch PanelBackgroundImportError.unableToWrite {}
-        expect(store.asset?.id == priorID, "Sync publication failure must preserve prior asset")
-        try expect(try manifestData(in: directory) == priorManifest, "Sync failure must preserve manifest")
-        try expect(try fileSnapshot(in: directory) == priorFiles, "Sync failure must restore legacy output")
-
-        let oldManifest = try loadManifest(in: directory)
-        let oldURLs = urlsReferenced(by: oldManifest, in: directory)
-        fileManager.resetFaults()
-        fileManager.failRemovePaths = [oldURLs[0].path]
-        do {
-            try store.importImage(from: staticSource)
-            fatalError("Compatibility old-generation cleanup failure must surface")
-        } catch PanelBackgroundImportError.cleanupFailed {}
-        expect(store.asset?.kind == .staticImage, "Sync cleanup failure must keep new legacy asset")
-        expect(
-            !FileManager.default.fileExists(
-                atPath: directory.appendingPathComponent("manifest.json").path
-            ),
-            "Sync cleanup failure must leave legacy publication authoritative"
-        )
-        let legacyValues = try store.fileURL.resourceValues(
-            forKeys: [.isRegularFileKey, .isSymbolicLinkKey]
-        )
-        expect(legacyValues.isRegularFile == true, "Sync committed legacy output must be regular")
-        expect(legacyValues.isSymbolicLink != true, "Sync committed legacy output must not be a symlink")
-        expect(FileManager.default.fileExists(atPath: oldURLs[0].path), "Failed cleanup may leave old media")
     }
 
     @MainActor
@@ -1128,7 +1009,6 @@ private final class TransactionFaultFileManager: FileManager, @unchecked Sendabl
     var failRemoveAfterSideEffectPaths: Set<String> = []
     var failManifestOperationNumbers: Set<Int> = []
     var corruptManifestOperationNumbers: Set<Int> = []
-    var failLegacyWriteAfterReplacement = false
     var hideCommittedPosterOnce = false
 
     private var manifestOperationCount = 0
@@ -1150,14 +1030,6 @@ private final class TransactionFaultFileManager: FileManager, @unchecked Sendabl
             throw StoreInjectedFailure.requested
         }
         try data.write(to: url, options: .atomic)
-    }
-
-    func writeLegacy(_ data: Data, to url: URL) throws {
-        try data.write(to: url, options: .atomic)
-        if failLegacyWriteAfterReplacement {
-            failLegacyWriteAfterReplacement = false
-            throw StoreInjectedFailure.requested
-        }
     }
 
     override func removeItem(at URL: URL) throws {
@@ -1196,7 +1068,6 @@ private final class TransactionFaultFileManager: FileManager, @unchecked Sendabl
         failRemoveAfterSideEffectPaths = []
         failManifestOperationNumbers = []
         corruptManifestOperationNumbers = []
-        failLegacyWriteAfterReplacement = false
         hideCommittedPosterOnce = false
         manifestOperationCount = 0
         failedRemovePaths = []

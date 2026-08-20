@@ -121,9 +121,12 @@ enum SettingsVisualCheck {
                 isDirectory: true
             )
         )
-        try backgroundStore.importImage(
-            from: URL(fileURLWithPath: "Artwork/ColdHot-AppIcon-Pulse-Source.png")
-        )
+        try runAsyncCheck {
+            try await backgroundStore.importBackground(
+                from: URL(fileURLWithPath: "Artwork/ColdHot-AppIcon-Pulse-Source.png")
+            )
+        }
+        expect(backgroundStore.asset?.kind == .staticImage)
 
         let outputDirectory = CommandLine.arguments.dropFirst().first
             ?? "/tmp/coldhot-settings-a1"
@@ -153,12 +156,14 @@ enum SettingsVisualCheck {
                     )
                     let outputPath = outputDirectory
                         + "/\(appearance.slug)-\(page.slug)-\(size.slug).png"
-                    try render(
+                    _ = try render(
                         view,
                         page: page,
                         appearance: appearance.name,
                         size: size.value,
-                        outputPath: outputPath
+                        outputPath: outputPath,
+                        expectedBackgroundLabel: page == .appearance ? "自定义图片" : nil,
+                        expectsPreviewAudioToggle: page == .appearance ? false : nil
                     )
                     renderedCaseCount += 1
                     print(outputPath)
@@ -166,9 +171,54 @@ enum SettingsVisualCheck {
             }
         }
         expect(renderedCaseCount == appearances.count * SettingsPage.allCases.count * 2)
+
+        let fixtureRoot = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "coldhot-settings-task6-fixtures-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: fixtureRoot,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: fixtureRoot) }
+
+        try runAsyncCheck {
+            try await verifyBackgroundOperationRecovery(in: fixtureRoot)
+            try await verifyPreviewAudioLifecycle(
+                settings: settings,
+                monitor: monitor,
+                fixtureRoot: fixtureRoot,
+                outputDirectory: outputDirectory
+            )
+        }
+        try verifyEmptyAndProcessingPresentation(
+            settings: settings,
+            monitor: monitor,
+            fixtureRoot: fixtureRoot,
+            outputDirectory: outputDirectory
+        )
         if ProcessInfo.processInfo.environment["COLDHOT_SETTINGS_VISUAL_HOLD"] == "1" {
             RunLoop.main.run()
         }
+    }
+
+    @MainActor
+    private static func runAsyncCheck(
+        _ operation: @escaping @MainActor () async throws -> Void
+    ) throws {
+        let resultBox = SettingsAsyncResultBox()
+        Task { @MainActor in
+            do {
+                try await operation()
+                resultBox.result = .success(())
+            } catch {
+                resultBox.result = .failure(error)
+            }
+        }
+        while resultBox.result == nil {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        }
+        try resultBox.result?.get()
     }
 
     @MainActor
@@ -233,10 +283,13 @@ enum SettingsVisualCheck {
         page: SettingsPage,
         appearance: NSAppearance.Name,
         size: CGSize,
-        outputPath: String
-    ) throws {
+        outputPath: String,
+        expectedBackgroundLabel: String? = nil,
+        expectsPreviewAudioToggle: Bool? = nil
+    ) throws -> SettingsRenderReport {
         let identifiers = AccessibilityIdentifierStore()
         let labels = AccessibilityLabelStore()
+        let actions = AccessibilityActionStore()
         let hostingView = NSHostingView(
             rootView: view
                 .environment(
@@ -246,6 +299,18 @@ enum SettingsVisualCheck {
                 .environment(
                     \.settingsAccessibilityLabelReporter,
                     { labels.values.insert($0) }
+                )
+                .environment(
+                    \.panelAccessibilityIdentifierReporter,
+                    { identifiers.values.insert($0) }
+                )
+                .environment(
+                    \.panelAccessibilityLabelReporter,
+                    { labels.values.insert($0) }
+                )
+                .environment(
+                    \.panelAccessibilityActionReporter,
+                    { identifier, action in actions.values[identifier] = action }
                 )
         )
         hostingView.appearance = NSAppearance(named: appearance)
@@ -268,7 +333,10 @@ enum SettingsVisualCheck {
         let splitViews = descendants(of: hostingView).compactMap { $0 as? NSSplitView }
         expect(splitViews.isEmpty)
         expect(window.contentMinSize == SettingsLayout.minimumContentSize)
-        expect(window.contentView?.bounds.size == SettingsLayout.defaultContentSize)
+        guard window.contentView?.bounds.size == SettingsLayout.defaultContentSize else {
+            let classes = descendants(of: hostingView).map { String(describing: type(of: $0)) }
+            fatalError("Unexpected configured size; descendants: \(classes)")
+        }
         expect(window.styleMask.contains(.fullSizeContentView))
         expect(window.titleVisibility == .hidden)
         expect(window.titlebarAppearsTransparent)
@@ -283,6 +351,16 @@ enum SettingsVisualCheck {
             expect(labels.values.contains("菜单面板外观预览"))
             expect(identifiers.values.contains("settings-appearance-preview-column"))
             expect(identifiers.values.contains("settings-appearance-controls-column"))
+            if let expectedBackgroundLabel {
+                expect(labels.values.contains(expectedBackgroundLabel))
+                expect(labels.values.contains("更换背景…"))
+            }
+            if let expectsPreviewAudioToggle {
+                expect(
+                    identifiers.values.contains("settings-preview-audio-toggle")
+                        == expectsPreviewAudioToggle
+                )
+            }
         }
         if page == .about {
             expect(
@@ -364,6 +442,404 @@ enum SettingsVisualCheck {
         }
         try data.write(to: URL(fileURLWithPath: outputPath), options: .atomic)
         window.orderOut(nil)
+        return SettingsRenderReport(
+            identifiers: identifiers.values,
+            labels: labels.values,
+            actions: actions.values
+        )
+    }
+
+    @MainActor
+    private static func verifyPreviewAudioLifecycle(
+        settings: MonitorSettings,
+        monitor: PerformanceMonitor,
+        fixtureRoot: URL,
+        outputDirectory: String
+    ) async throws {
+        settings.setPanelBackgroundEnabled(true)
+        settings.setPanelBackgroundAudioEnabled(false)
+
+        for (kind, hasAudio, shouldExposeAudio) in [
+            (PanelBackgroundMediaKind.staticImage, false, false),
+            (.convertedGIF, false, false),
+            (.video, false, false),
+            (.video, true, true)
+        ] {
+            let store = try makeFixtureStore(
+                in: fixtureRoot,
+                name: "eligibility-\(kind.rawValue)-\(hasAudio)",
+                kind: kind,
+                hasAudio: hasAudio
+            )
+            let session = makePreviewSession()
+            let view = SettingsView(
+                settings: settings,
+                panelBackgroundStore: store,
+                monitor: monitor,
+                updateController: UpdateController(),
+                previewSession: session
+            )
+            let report = try render(
+                view,
+                page: .appearance,
+                appearance: .aqua,
+                size: SettingsLayout.minimumContentSize,
+                outputPath: outputDirectory
+                    + "/fixture-eligibility-\(kind.rawValue)-\(hasAudio).png",
+                expectedBackgroundLabel: backgroundLabel(for: kind),
+                expectsPreviewAudioToggle: shouldExposeAudio
+            )
+            expect(
+                report.identifiers.contains("settings-preview-audio-toggle")
+                    == shouldExposeAudio
+            )
+            expect(
+                (report.actions["settings-preview-audio-toggle"] != nil)
+                    == shouldExposeAudio
+            )
+            if shouldExposeAudio {
+                expect(report.labels.contains("开启预览声音"))
+                expect(report.labels.contains("仅本次预览，离开后恢复静音"))
+                report.actions["settings-preview-audio-toggle"]?()
+                expect(session.isAudioRequested)
+                expect(!session.controller.player.isMuted)
+            }
+            expect(!settings.isPanelBackgroundAudioEnabled)
+            session.didDisappear()
+        }
+
+        let audioStore = try makeFixtureStore(
+            in: fixtureRoot,
+            name: "audio-layout",
+            kind: .video,
+            hasAudio: true
+        )
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            for size in [SettingsLayout.defaultContentSize, SettingsLayout.minimumContentSize] {
+                let session = makePreviewSession()
+                session.didAppear(
+                    asset: audioStore.asset,
+                    isEnabled: settings.isPanelBackgroundEnabled,
+                    reduceMotion: false
+                )
+                await Task.yield()
+                session.setAudioRequested(
+                    true,
+                    asset: audioStore.asset,
+                    isEnabled: settings.isPanelBackgroundEnabled,
+                    reduceMotion: false
+                )
+                let report = try render(
+                    SettingsView(
+                        settings: settings,
+                        panelBackgroundStore: audioStore,
+                        monitor: monitor,
+                        updateController: UpdateController(),
+                        previewSession: session
+                    ),
+                    page: .appearance,
+                    appearance: appearance,
+                    size: size,
+                    outputPath: outputDirectory
+                        + "/fixture-audio-video-\(appearance.rawValue)-"
+                        + "\(Int(size.width))x\(Int(size.height)).png",
+                    expectedBackgroundLabel: "视频背景",
+                    expectsPreviewAudioToggle: true
+                )
+                expect(report.labels.contains("关闭预览声音"))
+                expect(report.labels.contains("仅本次预览，离开后恢复静音"))
+                report.actions["settings-preview-audio-toggle"]?()
+                expect(!session.isAudioRequested)
+                expect(session.controller.player.isMuted)
+                expect(!settings.isPanelBackgroundAudioEnabled)
+                session.didDisappear()
+            }
+        }
+
+        let reducedStore = try makeFixtureStore(
+            in: fixtureRoot,
+            name: "reduce-motion-audio",
+            kind: .video,
+            hasAudio: true
+        )
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            for size in [SettingsLayout.defaultContentSize, SettingsLayout.minimumContentSize] {
+                let reducedSession = makePreviewSession()
+                let report = try render(
+                    SettingsView(
+                        settings: settings,
+                        panelBackgroundStore: reducedStore,
+                        monitor: monitor,
+                        updateController: UpdateController(),
+                        previewSession: reducedSession,
+                        reduceMotionOverride: true
+                    ),
+                    page: .appearance,
+                    appearance: appearance,
+                    size: size,
+                    outputPath: outputDirectory
+                        + "/fixture-reduce-motion-\(appearance.rawValue)-"
+                        + "\(Int(size.width))x\(Int(size.height)).png",
+                    expectedBackgroundLabel: "视频背景",
+                    expectsPreviewAudioToggle: true
+                )
+                expect(report.identifiers.contains("settings-preview-audio-toggle"))
+                expect(
+                    report.labels.contains(
+                        "减少动态效果已开启，动态背景与声音已暂停"
+                    )
+                )
+                report.actions["settings-preview-audio-toggle"]?()
+                expect(!reducedSession.isAudioRequested)
+                let intent = reducedSession.intent(
+                    asset: reducedStore.asset,
+                    isEnabled: true,
+                    reduceMotion: true
+                )
+                expect(!intent.shouldPlay)
+                expect(intent.shouldMute)
+            }
+        }
+    }
+
+    @MainActor
+    private static func verifyBackgroundOperationRecovery(in fixtureRoot: URL) async throws {
+        let suiteName = "com.xipiyoung.ColdHot.settings-operation-check"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            fatalError("Unable to create operation defaults suite")
+        }
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let directory = fixtureRoot.appendingPathComponent("operation-rollback", isDirectory: true)
+        let sourceURL = URL(fileURLWithPath: "Artwork/ColdHot-AppIcon-Pulse-Source.png")
+        let initialStore = PanelBackgroundStore(directoryURL: directory)
+        try await initialStore.importBackground(from: sourceURL)
+        let previousID = initialStore.asset?.id
+        let settings = MonitorSettings(defaults: defaults)
+        settings.setPanelBackgroundEnabled(false)
+        settings.setPanelBackgroundZoom(1.65)
+        settings.setPanelBackgroundPosition(x: 0.45, y: -0.35)
+        settings.setPanelBackgroundAudioEnabled(true)
+
+        let rollbackStore = PanelBackgroundStore(
+            directoryURL: directory,
+            writeManifest: { _, _ in throw PanelBackgroundImportError.unableToWrite }
+        )
+        let rollbackResult = await SettingsPanelBackgroundOperations.importBackground(
+            from: sourceURL,
+            store: rollbackStore,
+            settings: settings
+        )
+        expect(!rollbackResult.didCommit)
+        expect(rollbackResult.error?.localizedDescription
+            == PanelBackgroundImportError.unableToWrite.localizedDescription)
+        expect(rollbackStore.asset?.id == previousID)
+        expect(!settings.isPanelBackgroundEnabled)
+        expect(settings.panelBackgroundZoom == 1.65)
+        expect(settings.panelBackgroundPositionX == 0.45)
+        expect(settings.panelBackgroundPositionY == -0.35)
+        expect(settings.isPanelBackgroundAudioEnabled)
+
+        let corruptURL = fixtureRoot.appendingPathComponent("corrupt.mp4")
+        try Data("not media".utf8).write(to: corruptURL)
+        let corruptResult = await SettingsPanelBackgroundOperations.importBackground(
+            from: corruptURL,
+            store: rollbackStore,
+            settings: settings
+        )
+        expect(!corruptResult.didCommit)
+        expect(rollbackStore.asset?.id == previousID)
+        expect(!settings.isPanelBackgroundEnabled)
+        expect(settings.panelBackgroundZoom == 1.65)
+        expect(settings.panelBackgroundPositionX == 0.45)
+        expect(settings.panelBackgroundPositionY == -0.35)
+        expect(settings.isPanelBackgroundAudioEnabled)
+
+        let cleanupManager = SettingsCleanupFailingFileManager()
+        let cleanupDirectory = fixtureRoot.appendingPathComponent(
+            "operation-cleanup",
+            isDirectory: true
+        )
+        let cleanupStore = PanelBackgroundStore(
+            directoryURL: cleanupDirectory,
+            fileManager: cleanupManager
+        )
+        try await cleanupStore.importBackground(from: sourceURL)
+        let cleanupPreviousID = cleanupStore.asset?.id
+        let referencedFiles = try FileManager.default.contentsOfDirectory(
+            at: cleanupDirectory,
+            includingPropertiesForKeys: nil
+        ).filter { $0.lastPathComponent.hasPrefix("media-") }
+        expect(referencedFiles.count == 1)
+        cleanupManager.blockedRemovalPath = referencedFiles[0].standardizedFileURL.path
+        settings.setPanelBackgroundEnabled(false)
+        settings.setPanelBackgroundZoom(1.8)
+        settings.setPanelBackgroundPosition(x: -0.6, y: 0.4)
+        settings.setPanelBackgroundAudioEnabled(true)
+        let cleanupImportResult = await SettingsPanelBackgroundOperations.importBackground(
+            from: sourceURL,
+            store: cleanupStore,
+            settings: settings
+        )
+        expect(cleanupImportResult.didCommit)
+        expect(cleanupImportResult.error?.localizedDescription
+            == PanelBackgroundImportError.cleanupFailed.localizedDescription)
+        expect(cleanupStore.asset?.id != cleanupPreviousID)
+        expect(settings.isPanelBackgroundEnabled)
+        expect(settings.panelBackgroundZoom == 1)
+        expect(settings.panelBackgroundPositionX == 0)
+        expect(settings.panelBackgroundPositionY == 0)
+        expect(settings.isPanelBackgroundAudioEnabled)
+
+        let cleanupManifestData = try Data(
+            contentsOf: cleanupDirectory.appendingPathComponent("manifest.json")
+        )
+        let cleanupManifest = try JSONDecoder().decode(
+            PanelBackgroundManifest.self,
+            from: cleanupManifestData
+        )
+        cleanupManager.blockedRemovalPath = cleanupDirectory
+            .appendingPathComponent(cleanupManifest.mediaFilename)
+            .standardizedFileURL.path
+        settings.setPanelBackgroundEnabled(true)
+        settings.setPanelBackgroundZoom(1.8)
+        settings.setPanelBackgroundPosition(x: -0.6, y: 0.4)
+        settings.setPanelBackgroundAudioEnabled(true)
+        let cleanupResult = SettingsPanelBackgroundOperations.removeBackground(
+            store: cleanupStore,
+            settings: settings
+        )
+        expect(cleanupResult.didCommit)
+        expect(cleanupResult.error?.localizedDescription
+            == PanelBackgroundImportError.cleanupFailed.localizedDescription)
+        expect(cleanupStore.asset == nil)
+        expect(!settings.isPanelBackgroundEnabled)
+        expect(settings.panelBackgroundZoom == 1)
+        expect(settings.panelBackgroundPositionX == 0)
+        expect(settings.panelBackgroundPositionY == 0)
+        expect(!settings.isPanelBackgroundAudioEnabled)
+    }
+
+    @MainActor
+    private static func verifyEmptyAndProcessingPresentation(
+        settings: MonitorSettings,
+        monitor: PerformanceMonitor,
+        fixtureRoot: URL,
+        outputDirectory: String
+    ) throws {
+        let emptyStore = PanelBackgroundStore(
+            directoryURL: fixtureRoot.appendingPathComponent("empty", isDirectory: true)
+        )
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            for size in [SettingsLayout.defaultContentSize, SettingsLayout.minimumContentSize] {
+                let emptyReport = try render(
+                    SettingsView(
+                        settings: settings,
+                        panelBackgroundStore: emptyStore,
+                        monitor: monitor,
+                        updateController: UpdateController()
+                    ),
+                    page: .appearance,
+                    appearance: appearance,
+                    size: size,
+                    outputPath: outputDirectory
+                        + "/fixture-empty-\(appearance.rawValue)-"
+                        + "\(Int(size.width))x\(Int(size.height)).png"
+                )
+                expect(emptyReport.labels.contains("自定义背景"))
+                expect(emptyReport.labels.contains("选择背景…"))
+                expect(emptyReport.labels.contains("图片、GIF 与视频"))
+
+                let operationState = SettingsBackgroundOperationState(isProcessing: true)
+                let processingReport = try render(
+                    SettingsView(
+                        settings: settings,
+                        panelBackgroundStore: emptyStore,
+                        monitor: monitor,
+                        updateController: UpdateController(),
+                        backgroundOperationState: operationState
+                    ),
+                    page: .appearance,
+                    appearance: appearance,
+                    size: size,
+                    outputPath: outputDirectory
+                        + "/fixture-processing-\(appearance.rawValue)-"
+                        + "\(Int(size.width))x\(Int(size.height)).png"
+                )
+                expect(processingReport.labels.contains("正在处理动态背景…"))
+            }
+        }
+    }
+
+    @MainActor
+    private static func makeFixtureStore(
+        in fixtureRoot: URL,
+        name: String,
+        kind: PanelBackgroundMediaKind,
+        hasAudio: Bool
+    ) throws -> PanelBackgroundStore {
+        let directory = fixtureRoot.appendingPathComponent(name, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let generationID = "fixture-\(UUID().uuidString)"
+        let mediaExtension = kind == .staticImage ? "png" : "mov"
+        let mediaFilename = "media-\(generationID).\(mediaExtension)"
+        let posterFilename = kind == .staticImage ? nil : "poster-\(generationID).png"
+        let sourceImageURL = URL(fileURLWithPath: "Artwork/ColdHot-AppIcon-Pulse-Source.png")
+        if kind == .staticImage {
+            try FileManager.default.copyItem(
+                at: sourceImageURL,
+                to: directory.appendingPathComponent(mediaFilename)
+            )
+        } else {
+            try Data([0x00]).write(to: directory.appendingPathComponent(mediaFilename))
+            try FileManager.default.copyItem(
+                at: sourceImageURL,
+                to: directory.appendingPathComponent(posterFilename!)
+            )
+        }
+        let manifest = PanelBackgroundManifest(
+            schemaVersion: PanelBackgroundManifest.currentSchemaVersion,
+            generationID: generationID,
+            kind: kind,
+            mediaFilename: mediaFilename,
+            posterFilename: posterFilename,
+            originalTypeIdentifier: kind == .staticImage ? "public.png" : "com.apple.quicktime-movie",
+            hasAudio: hasAudio
+        )
+        let manifestData = try JSONEncoder().encode(manifest)
+        try manifestData.write(
+            to: directory.appendingPathComponent("manifest.json"),
+            options: .atomic
+        )
+        return PanelBackgroundStore(directoryURL: directory)
+    }
+
+    @MainActor
+    private static func makePreviewSession() -> SettingsPanelBackgroundPreviewSession {
+        let dependencies = PanelBackgroundPlaybackDependencies(
+            preparePlayerItem: { _ in throw CancellationError() },
+            observePlayerItemStatus: { item, statusHandler in
+                item.observe(\.status, options: [.initial, .new]) { item, _ in
+                    let status = item.status
+                    let errorDescription = item.error?.localizedDescription
+                    DispatchQueue.main.async {
+                        statusHandler(status, errorDescription)
+                    }
+                }
+            }
+        )
+        return SettingsPanelBackgroundPreviewSession(
+            controller: PanelBackgroundPlaybackController(dependencies: dependencies)
+        )
+    }
+
+    private static func backgroundLabel(for kind: PanelBackgroundMediaKind) -> String {
+        switch kind {
+        case .staticImage: "自定义图片"
+        case .convertedGIF: "动态 GIF"
+        case .video: "视频背景"
+        }
     }
 
     @MainActor
@@ -425,6 +901,33 @@ private final class AccessibilityIdentifierStore {
 @MainActor
 private final class AccessibilityLabelStore {
     var values: Set<String> = []
+}
+
+@MainActor
+private final class AccessibilityActionStore {
+    var values: [String: () -> Void] = [:]
+}
+
+private struct SettingsRenderReport {
+    let identifiers: Set<String>
+    let labels: Set<String>
+    let actions: [String: () -> Void]
+}
+
+@MainActor
+private final class SettingsAsyncResultBox {
+    var result: Result<Void, Error>?
+}
+
+private final class SettingsCleanupFailingFileManager: FileManager, @unchecked Sendable {
+    var blockedRemovalPath: String?
+
+    override func removeItem(at URL: URL) throws {
+        if URL.standardizedFileURL.path == blockedRemovalPath {
+            throw CocoaError(.fileWriteNoPermission)
+        }
+        try super.removeItem(at: URL)
+    }
 }
 
 @MainActor
