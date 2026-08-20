@@ -27,6 +27,7 @@
 		B10000000000000000000001 /* ThresholdMetric.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000001 /* ThresholdMetric.swift */; };
 		B10000000000000000000002 /* PanelBackgroundAsset.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000002 /* PanelBackgroundAsset.swift */; };
 		H10000000000000000000001 /* GIFVideoConverter.swift in Sources */ = {isa = PBXBuildFile; fileRef = H20000000000000000000001 /* GIFVideoConverter.swift */; };
+		H10000000000000000000002 /* PanelBackgroundMediaImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = H20000000000000000000002 /* PanelBackgroundMediaImporter.swift */; };
 		C10000000000000000000001 /* FanSpinnerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000001 /* FanSpinnerView.swift */; };
 		D10000000000000000000001 /* PanelBackgroundStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000001 /* PanelBackgroundStore.swift */; };
 		E10000000000000000000001 /* PanelBackgroundView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000001 /* PanelBackgroundView.swift */; };
@@ -60,6 +61,7 @@
 		B20000000000000000000001 /* ThresholdMetric.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThresholdMetric.swift; sourceTree = "<group>"; };
 		B20000000000000000000002 /* PanelBackgroundAsset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelBackgroundAsset.swift; sourceTree = "<group>"; };
 		H20000000000000000000001 /* GIFVideoConverter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GIFVideoConverter.swift; sourceTree = "<group>"; };
+		H20000000000000000000002 /* PanelBackgroundMediaImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelBackgroundMediaImporter.swift; sourceTree = "<group>"; };
 		C20000000000000000000001 /* FanSpinnerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FanSpinnerView.swift; sourceTree = "<group>"; };
 		D20000000000000000000001 /* PanelBackgroundStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelBackgroundStore.swift; sourceTree = "<group>"; };
 		E20000000000000000000001 /* PanelBackgroundView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelBackgroundView.swift; sourceTree = "<group>"; };
@@ -126,6 +128,7 @@
 			isa = PBXGroup;
 			children = (
 				H20000000000000000000001 /* GIFVideoConverter.swift */,
+				H20000000000000000000002 /* PanelBackgroundMediaImporter.swift */,
 			);
 			path = Media;
 			sourceTree = "<group>";
@@ -265,6 +268,7 @@
 				B10000000000000000000001 /* ThresholdMetric.swift in Sources */,
 				B10000000000000000000002 /* PanelBackgroundAsset.swift in Sources */,
 				H10000000000000000000001 /* GIFVideoConverter.swift in Sources */,
+				H10000000000000000000002 /* PanelBackgroundMediaImporter.swift in Sources */,
 				D10000000000000000000001 /* PanelBackgroundStore.swift in Sources */,
 				E10000000000000000000001 /* PanelBackgroundView.swift in Sources */,
 				F10000000000000000000001 /* PanelAppearancePreview.swift in Sources */,

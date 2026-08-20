@@ -11,7 +11,9 @@ enum PanelBackgroundCheck {
         checkSettingsPersistence()
         checkBackgroundTransformGeometry()
         try checkPreviewLiveTransformWiring()
-        try checkImageLifecycle()
+        try runAsyncCheck {
+            try await checkImageLifecycle()
+        }
         checkBackgroundRendering()
         checkReadabilityRendering()
         checkPanelPreviewRendering()
@@ -24,6 +26,25 @@ enum PanelBackgroundCheck {
             )
         }
         print("Panel background checks passed")
+    }
+
+    @MainActor
+    private static func runAsyncCheck(
+        _ operation: @escaping @MainActor () async throws -> Void
+    ) throws {
+        let resultBox = PanelBackgroundAsyncResultBox()
+        Task { @MainActor in
+            do {
+                try await operation()
+                resultBox.result = .success(())
+            } catch {
+                resultBox.result = .failure(error)
+            }
+        }
+        while resultBox.result == nil {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        }
+        try resultBox.result?.get()
     }
 
     private static func checkSettingsPersistence() {
@@ -239,7 +260,7 @@ enum PanelBackgroundCheck {
     }
 
     @MainActor
-    private static func checkImageLifecycle() throws {
+    private static func checkImageLifecycle() async throws {
         let fileManager = FileManager.default
         let rootDirectory = fileManager.temporaryDirectory
             .appendingPathComponent("ColdHotPanelBackgroundCheck-\(UUID().uuidString)")
@@ -261,10 +282,10 @@ enum PanelBackgroundCheck {
         let store = PanelBackgroundStore(directoryURL: storeDirectory)
         expect(!store.hasImage)
 
-        try store.importImage(from: sourceURL)
+        try await store.importBackground(from: sourceURL)
         expect(store.hasImage)
-        expect(store.fileURL.lastPathComponent == "background.png")
-        let storedPixelSize = try pixelSize(of: store.fileURL)
+        let storedURL = try committedMediaURL(in: storeDirectory)
+        let storedPixelSize = try pixelSize(of: storedURL)
         expect(storedPixelSize == CGSize(width: 1_600, height: 800))
 
         let smallSourceURL = rootDirectory.appendingPathComponent("small-source.png")
@@ -274,33 +295,45 @@ enum PanelBackgroundCheck {
             height: 200,
             color: .systemBlue
         )
-        try store.importImage(from: smallSourceURL)
-        let smallStoredPixelSize = try pixelSize(of: store.fileURL)
+        try await store.importBackground(from: smallSourceURL)
+        let smallStoredURL = try committedMediaURL(in: storeDirectory)
+        let smallStoredPixelSize = try pixelSize(of: smallStoredURL)
         expect(smallStoredPixelSize == CGSize(width: 320, height: 200))
 
-        let storedBeforeInvalidImport = try Data(contentsOf: store.fileURL)
+        let storedBeforeInvalidImport = try Data(contentsOf: smallStoredURL)
         let invalidURL = rootDirectory.appendingPathComponent("invalid.txt")
         try Data("not an image".utf8).write(to: invalidURL)
         do {
-            try store.importImage(from: invalidURL)
+            try await store.importBackground(from: invalidURL)
             fatalError("Invalid image import should fail")
         } catch {}
         expect(store.hasImage)
-        let storedAfterInvalidImport = try Data(contentsOf: store.fileURL)
+        let storedAfterInvalidImport = try Data(contentsOf: smallStoredURL)
         expect(storedAfterInvalidImport == storedBeforeInvalidImport)
 
         let restored = PanelBackgroundStore(directoryURL: storeDirectory)
         expect(restored.hasImage)
         expect(restored.image != nil)
 
-        try fileManager.removeItem(at: restored.fileURL)
+        try fileManager.removeItem(at: smallStoredURL)
         expect(restored.hasImage)
         let missingFileStore = PanelBackgroundStore(directoryURL: storeDirectory)
         expect(!missingFileStore.hasImage)
 
-        try restored.removeImage()
+        try restored.removeBackground()
         expect(!restored.hasImage)
-        expect(!fileManager.fileExists(atPath: restored.fileURL.path))
+        expect(!fileManager.fileExists(atPath: smallStoredURL.path))
+        expect(
+            !fileManager.fileExists(
+                atPath: storeDirectory.appendingPathComponent("manifest.json").path
+            )
+        )
+    }
+
+    private static func committedMediaURL(in directory: URL) throws -> URL {
+        let data = try Data(contentsOf: directory.appendingPathComponent("manifest.json"))
+        let manifest = try JSONDecoder().decode(PanelBackgroundManifest.self, from: data)
+        return directory.appendingPathComponent(manifest.mediaFilename)
     }
 
     private static func writeTestPNG(
@@ -843,6 +876,11 @@ enum PanelBackgroundCheck {
             fatalError("Check failed", file: file, line: line)
         }
     }
+}
+
+@MainActor
+private final class PanelBackgroundAsyncResultBox {
+    var result: Result<Void, Error>?
 }
 
 private struct LivePanelScrollHarness: View {
