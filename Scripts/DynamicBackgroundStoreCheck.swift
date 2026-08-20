@@ -22,10 +22,11 @@ enum DynamicBackgroundStoreCheck {
         try checkSynchronousCompatibility(in: rootDirectory)
         try await checkTransactionalImports(in: rootDirectory)
         try await checkMutationIsolationAndCancellation(in: rootDirectory)
-        try checkCancellationErrorMapping()
+        try await checkImporterVideoCancellation(in: rootDirectory)
         try await checkSymlinkMaterializationAndTransformedPoster(in: rootDirectory)
         try await checkTypeResolutionAndUnknownExtensionLimit(in: rootDirectory)
         try await checkInjectedTransactionFailures(in: rootDirectory)
+        try await checkCorruptManifestRestorationFailure(in: rootDirectory)
         try await checkSynchronousTransactionFailures(in: rootDirectory)
         try await checkStartupManifestHardening(in: rootDirectory)
         print("Dynamic background store checks passed")
@@ -373,15 +374,36 @@ enum DynamicBackgroundStoreCheck {
         expect(cancellationStore.hasImage, "Cancellation must release the mutation guard")
     }
 
-    private static func checkCancellationErrorMapping() throws {
-        do {
-            try PanelBackgroundMediaImporter.rethrowVideoLoadError(CancellationError())
-        } catch is CancellationError {
-            return
-        } catch {
-            fatalError("AVFoundation cancellation must remain CancellationError")
+    @MainActor
+    private static func checkImporterVideoCancellation(in rootDirectory: URL) async throws {
+        let sourceURL = rootDirectory.appendingPathComponent("importer-cancellation.mp4")
+        let stagingDirectory = rootDirectory.appendingPathComponent(
+            "importer-cancellation-staging",
+            isDirectory: true
+        )
+        try await DynamicBackgroundTestMedia.makeSilentH264Video(at: sourceURL)
+        let gate = ImportPreparationGate()
+        let importer = PanelBackgroundMediaImporter(
+            loadVideoMetadata: { _ in
+                await gate.pause()
+                try Task.checkCancellation()
+                fatalError("Cancelled metadata loading must not return metadata")
+            }
+        )
+        let importTask = Task { @MainActor in
+            try await importer.prepareImport(from: sourceURL, in: stagingDirectory)
         }
-        fatalError("AVFoundation cancellation must remain CancellationError")
+        await gate.waitUntilPaused()
+        importTask.cancel()
+        await gate.resume()
+        do {
+            _ = try await importTask.value
+            fatalError("Video prepareImport cancellation must throw CancellationError")
+        } catch is CancellationError {}
+        expect(
+            !FileManager.default.fileExists(atPath: stagingDirectory.path),
+            "Cancelled prepareImport must remove its staging directory"
+        )
     }
 
     @MainActor
@@ -616,6 +638,70 @@ enum DynamicBackgroundStoreCheck {
     }
 
     @MainActor
+    private static func checkCorruptManifestRestorationFailure(
+        in rootDirectory: URL
+    ) async throws {
+        let fileManager = TransactionFaultFileManager()
+        let directory = rootDirectory.appendingPathComponent(
+            "corrupt-restoration-failure",
+            isDirectory: true
+        )
+        fileManager.manifestURL = directory.appendingPathComponent("manifest.json")
+        let baselineSource = rootDirectory.appendingPathComponent(
+            "corrupt-restoration-baseline.png"
+        )
+        let gifSource = rootDirectory.appendingPathComponent("corrupt-restoration.gif")
+        try DynamicBackgroundTestMedia.makePNG(at: baselineSource)
+        try DynamicBackgroundTestMedia.makeTwoFrameGIF(at: gifSource)
+        let store = PanelBackgroundStore(
+            directoryURL: directory,
+            fileManager: fileManager,
+            writeManifest: fileManager.writeManifest
+        )
+        try await store.importBackground(from: baselineSource)
+
+        let protectedManifest = try loadManifest(in: directory)
+        let protectedURLs = urlsReferenced(by: protectedManifest, in: directory)
+        let protectedData = try Dictionary(
+            uniqueKeysWithValues: protectedURLs.map {
+                ($0.lastPathComponent, try Data(contentsOf: $0))
+            }
+        )
+        fileManager.resetFaults()
+        fileManager.corruptManifestOperationNumbers = [1]
+        fileManager.failManifestOperationNumbers = [2]
+        do {
+            try await store.importBackground(from: gifSource)
+            fatalError("Corrupt replacement plus restoration failure must throw")
+        } catch PanelBackgroundImportError.rollbackFailed {}
+        expect(store.asset == nil, "Invalid surviving manifest must not retain a stale prior asset")
+        expect(
+            !fileManager.fileExists(atPath: directory.appendingPathComponent("manifest.json").path),
+            "Invalid surviving manifest must be removed or quarantined"
+        )
+        for protectedURL in protectedURLs {
+            try expect(
+                try Data(contentsOf: protectedURL) == protectedData[protectedURL.lastPathComponent],
+                "Failed restoration must protect the prior generation bytes"
+            )
+        }
+        try expect(
+            Set(try generationEntries(in: directory).map(\.lastPathComponent))
+                == Set(protectedURLs.map(\.lastPathComponent)),
+            "Invalid-manifest recovery must remove only the candidate generation"
+        )
+        try expect(
+            try stagingEntries(in: directory).isEmpty,
+            "Invalid-manifest recovery must remove staging files"
+        )
+        fileManager.resetFaults()
+        expect(
+            PanelBackgroundStore(directoryURL: directory, fileManager: fileManager).asset == nil,
+            "Invalid-manifest recovery must remain coherent after restart"
+        )
+    }
+
+    @MainActor
     private static func checkSynchronousTransactionFailures(in rootDirectory: URL) async throws {
         let fileManager = TransactionFaultFileManager()
         let directory = rootDirectory.appendingPathComponent("sync-faults", isDirectory: true)
@@ -627,13 +713,46 @@ enum DynamicBackgroundStoreCheck {
         let store = PanelBackgroundStore(
             directoryURL: directory,
             fileManager: fileManager,
-            writeManifest: fileManager.writeManifest
+            writeManifest: fileManager.writeManifest,
+            writeLegacy: fileManager.writeLegacy
         )
         try await store.importBackground(from: gifSource)
 
         let priorID = store.asset?.id
         let priorManifest = try manifestData(in: directory)
         let priorFiles = try fileSnapshot(in: directory)
+
+        func expectExactPrior(_ message: String) throws {
+            expect(store.asset?.id == priorID, "\(message): asset identity changed")
+            try expect(try manifestData(in: directory) == priorManifest, "\(message): manifest changed")
+            try expect(try fileSnapshot(in: directory) == priorFiles, "\(message): files changed")
+            try expect(try stagingEntries(in: directory).isEmpty, "\(message): staging leaked")
+            fileManager.resetFaults()
+            expect(
+                PanelBackgroundStore(directoryURL: directory, fileManager: fileManager).asset?.id
+                    == priorID,
+                "\(message): restarted asset changed"
+            )
+        }
+
+        fileManager.resetFaults()
+        fileManager.failLegacyWriteAfterReplacement = true
+        do {
+            try store.importImage(from: staticSource)
+            fatalError("Post-replacement legacy write failure must throw")
+        } catch PanelBackgroundImportError.unableToWrite {}
+        try expectExactPrior("Post-replacement legacy write failure")
+
+        fileManager.resetFaults()
+        fileManager.failRemoveAfterSideEffectPaths = [
+            directory.appendingPathComponent("manifest.json").path
+        ]
+        do {
+            try store.importImage(from: staticSource)
+            fatalError("Post-removal manifest failure must throw")
+        } catch PanelBackgroundImportError.unableToWrite {}
+        try expectExactPrior("Post-removal manifest failure")
+
         fileManager.resetFaults()
         fileManager.failRemovePaths = [directory.appendingPathComponent("manifest.json").path]
         do {
@@ -1006,8 +1125,10 @@ private final class TransactionFaultFileManager: FileManager, @unchecked Sendabl
     var failMoveDestinationPrefix: String?
     var failRemoveDestinationPrefix: String?
     var failRemovePaths: Set<String> = []
+    var failRemoveAfterSideEffectPaths: Set<String> = []
     var failManifestOperationNumbers: Set<Int> = []
     var corruptManifestOperationNumbers: Set<Int> = []
+    var failLegacyWriteAfterReplacement = false
     var hideCommittedPosterOnce = false
 
     private var manifestOperationCount = 0
@@ -1031,7 +1152,20 @@ private final class TransactionFaultFileManager: FileManager, @unchecked Sendabl
         try data.write(to: url, options: .atomic)
     }
 
+    func writeLegacy(_ data: Data, to url: URL) throws {
+        try data.write(to: url, options: .atomic)
+        if failLegacyWriteAfterReplacement {
+            failLegacyWriteAfterReplacement = false
+            throw StoreInjectedFailure.requested
+        }
+    }
+
     override func removeItem(at URL: URL) throws {
+        if failRemoveAfterSideEffectPaths.contains(URL.path) {
+            failRemoveAfterSideEffectPaths.remove(URL.path)
+            try super.removeItem(at: URL)
+            throw StoreInjectedFailure.requested
+        }
         if failRemovePaths.contains(URL.path), !failedRemovePaths.contains(URL.path) {
             failedRemovePaths.insert(URL.path)
             throw StoreInjectedFailure.requested
@@ -1059,8 +1193,10 @@ private final class TransactionFaultFileManager: FileManager, @unchecked Sendabl
         failMoveDestinationPrefix = nil
         failRemoveDestinationPrefix = nil
         failRemovePaths = []
+        failRemoveAfterSideEffectPaths = []
         failManifestOperationNumbers = []
         corruptManifestOperationNumbers = []
+        failLegacyWriteAfterReplacement = false
         hideCommittedPosterOnce = false
         manifestOperationCount = 0
         failedRemovePaths = []

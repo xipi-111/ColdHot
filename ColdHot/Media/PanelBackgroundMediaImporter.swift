@@ -12,6 +12,16 @@ struct PanelBackgroundPreparedImport {
     let hasAudio: Bool
 }
 
+struct PanelBackgroundVideoMetadata {
+    let isPlayable: Bool
+    let hasVideo: Bool
+    let hasAudio: Bool
+}
+
+typealias PanelBackgroundLoadVideoMetadata = (
+    _ sourceURL: URL
+) async throws -> PanelBackgroundVideoMetadata
+
 enum PanelBackgroundImportError: LocalizedError {
     case gifTooLarge
     case videoTooLarge
@@ -46,7 +56,7 @@ enum PanelBackgroundImportError: LocalizedError {
         case .operationInProgress:
             "另一项背景操作正在进行，请稍后重试。"
         case .rollbackFailed:
-            "背景操作失败，且部分临时文件无法清理。当前背景仍保持可用。"
+            "背景操作失败，且无法完整恢复先前状态。已保留可安全读取的本地背景数据。"
         case .cleanupFailed:
             "背景已更新，但旧背景文件未能完全清理。"
         }
@@ -57,9 +67,14 @@ struct PanelBackgroundMediaImporter {
     static let maximumPixelDimension = 1_600
 
     private let fileManager: FileManager
+    private let loadVideoMetadata: PanelBackgroundLoadVideoMetadata
 
-    init(fileManager: FileManager = .default) {
+    init(
+        fileManager: FileManager = .default,
+        loadVideoMetadata: PanelBackgroundLoadVideoMetadata? = nil
+    ) {
         self.fileManager = fileManager
+        self.loadVideoMetadata = loadVideoMetadata ?? Self.loadVideoMetadataFromAsset
     }
 
     func prepareImport(
@@ -67,6 +82,12 @@ struct PanelBackgroundMediaImporter {
         in stagingDirectory: URL
     ) async throws -> PanelBackgroundPreparedImport {
         try Task.checkCancellation()
+        var completed = false
+        defer {
+            if !completed, fileManager.fileExists(atPath: stagingDirectory.path) {
+                try? fileManager.removeItem(at: stagingDirectory)
+            }
+        }
         do {
             try fileManager.createDirectory(
                 at: stagingDirectory,
@@ -81,12 +102,13 @@ struct PanelBackgroundMediaImporter {
             throw PanelBackgroundImportError.unreadableMedia
         }
 
+        let prepared: PanelBackgroundPreparedImport
         switch resolvedType.category {
         case .gif:
             guard PanelBackgroundImportLimits.acceptsGIF(byteCount: byteCount) else {
                 throw PanelBackgroundImportError.gifTooLarge
             }
-            return try await prepareGIF(
+            prepared = try await prepareGIF(
                 from: sourceURL,
                 typeIdentifier: resolvedType.type.identifier,
                 in: stagingDirectory
@@ -95,7 +117,7 @@ struct PanelBackgroundMediaImporter {
             guard PanelBackgroundImportLimits.acceptsVideo(byteCount: byteCount) else {
                 throw PanelBackgroundImportError.videoTooLarge
             }
-            return try await prepareVideo(
+            prepared = try await prepareVideo(
                 from: sourceURL,
                 type: resolvedType.type,
                 expectedByteCount: byteCount,
@@ -104,7 +126,7 @@ struct PanelBackgroundMediaImporter {
         case .image:
             let mediaURL = stagingDirectory.appendingPathComponent("media.png")
             try Self.writeStaticThumbnail(from: sourceURL, to: mediaURL)
-            return PanelBackgroundPreparedImport(
+            prepared = PanelBackgroundPreparedImport(
                 kind: .staticImage,
                 mediaURL: mediaURL,
                 posterURL: nil,
@@ -112,6 +134,8 @@ struct PanelBackgroundMediaImporter {
                 hasAudio: false
             )
         }
+        completed = true
+        return prepared
     }
 
     static func writeStaticThumbnail(from sourceURL: URL, to destinationURL: URL) throws {
@@ -177,30 +201,21 @@ struct PanelBackgroundMediaImporter {
         expectedByteCount: Int64,
         in stagingDirectory: URL
     ) async throws -> PanelBackgroundPreparedImport {
-        let sourceAsset = AVURLAsset(url: sourceURL)
-        let isPlayable: Bool
+        let metadata: PanelBackgroundVideoMetadata
         do {
-            isPlayable = try await sourceAsset.load(.isPlayable)
+            metadata = try await loadVideoMetadata(sourceURL)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
-            try Self.rethrowVideoLoadError(error)
+            throw PanelBackgroundImportError.unreadableMedia
         }
         try Task.checkCancellation()
-        guard isPlayable else {
+        guard metadata.isPlayable else {
             throw PanelBackgroundImportError.unsupportedVideo
         }
-
-        let videoTracks: [AVAssetTrack]
-        let audioTracks: [AVAssetTrack]
-        do {
-            videoTracks = try await sourceAsset.loadTracks(withMediaType: .video)
-            audioTracks = try await sourceAsset.loadTracks(withMediaType: .audio)
-        } catch {
-            try Self.rethrowVideoLoadError(error)
-        }
-        guard !videoTracks.isEmpty else {
+        guard metadata.hasVideo else {
             throw PanelBackgroundImportError.missingVideoTrack
         }
-        try Task.checkCancellation()
 
         let fileExtension = sourceURL.pathExtension.isEmpty
             ? (type.preferredFilenameExtension ?? "mov")
@@ -225,6 +240,29 @@ struct PanelBackgroundMediaImporter {
             mediaURL: mediaURL,
             posterURL: posterURL,
             originalTypeIdentifier: type.identifier,
+            hasAudio: metadata.hasAudio
+        )
+    }
+
+    private static func loadVideoMetadataFromAsset(
+        at sourceURL: URL
+    ) async throws -> PanelBackgroundVideoMetadata {
+        let sourceAsset = AVURLAsset(url: sourceURL)
+        let isPlayable = try await sourceAsset.load(.isPlayable)
+        try Task.checkCancellation()
+        guard isPlayable else {
+            return PanelBackgroundVideoMetadata(
+                isPlayable: false,
+                hasVideo: false,
+                hasAudio: false
+            )
+        }
+        let videoTracks = try await sourceAsset.loadTracks(withMediaType: .video)
+        let audioTracks = try await sourceAsset.loadTracks(withMediaType: .audio)
+        try Task.checkCancellation()
+        return PanelBackgroundVideoMetadata(
+            isPlayable: true,
+            hasVideo: !videoTracks.isEmpty,
             hasAudio: !audioTracks.isEmpty
         )
     }
@@ -244,13 +282,6 @@ struct PanelBackgroundMediaImporter {
             throw PanelBackgroundImportError.unableToCreatePoster
         }
         try Self.writePNG(image, to: destinationURL)
-    }
-
-    static func rethrowVideoLoadError(_ error: Error) throws -> Never {
-        if error is CancellationError {
-            throw CancellationError()
-        }
-        throw PanelBackgroundImportError.unreadableMedia
     }
 
     private func materializeRegularFile(

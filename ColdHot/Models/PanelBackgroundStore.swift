@@ -9,6 +9,7 @@ typealias PanelBackgroundPrepareImport = (
 ) async throws -> PanelBackgroundPreparedImport
 
 typealias PanelBackgroundWriteManifest = (_ data: Data, _ manifestURL: URL) throws -> Void
+typealias PanelBackgroundWriteLegacy = (_ data: Data, _ legacyURL: URL) throws -> Void
 
 @MainActor
 final class PanelBackgroundStore: ObservableObject {
@@ -27,13 +28,15 @@ final class PanelBackgroundStore: ObservableObject {
     private let fileManager: FileManager
     private let prepareImport: PanelBackgroundPrepareImport
     private let writeManifestOperation: PanelBackgroundWriteManifest
+    private let writeLegacyOperation: PanelBackgroundWriteLegacy
     private var mutationInProgress = false
 
     init(
         directoryURL: URL? = nil,
         fileManager: FileManager = .default,
         prepareImport: PanelBackgroundPrepareImport? = nil,
-        writeManifest: PanelBackgroundWriteManifest? = nil
+        writeManifest: PanelBackgroundWriteManifest? = nil,
+        writeLegacy: PanelBackgroundWriteLegacy? = nil
     ) {
         self.fileManager = fileManager
         let resolvedDirectory = directoryURL
@@ -47,6 +50,9 @@ final class PanelBackgroundStore: ObservableObject {
             try await importer.prepareImport(from: sourceURL, in: stagingDirectory)
         }
         writeManifestOperation = writeManifest ?? { data, url in
+            try data.write(to: url, options: .atomic)
+        }
+        writeLegacyOperation = writeLegacy ?? { data, url in
             try data.write(to: url, options: .atomic)
         }
 
@@ -79,7 +85,6 @@ final class PanelBackgroundStore: ObservableObject {
             "staging-\(generationID)",
             isDirectory: true
         )
-        let previousAsset = asset
         let previousManifestData = try? Data(contentsOf: manifestURL)
         let previousManifest = previousManifestData.flatMap(Self.decodeManifest)
         var finalURLs: [URL] = []
@@ -185,7 +190,6 @@ final class PanelBackgroundStore: ObservableObject {
             }
             try recoverFailedImport(
                 originalError: error,
-                previousAsset: previousAsset,
                 previousManifestData: previousManifestData,
                 finalURLs: finalURLs,
                 stagingDirectory: stagingDirectory
@@ -251,17 +255,19 @@ final class PanelBackgroundStore: ObservableObject {
             throw PanelBackgroundImportError.unableToWrite
         }
 
-        let previousAsset = asset
-        let previousManifest = Self.loadManifest(from: manifestURL, fileManager: fileManager)
+        let previousManifestExisted = fileManager.fileExists(atPath: manifestURL.path)
+        let previousManifestData = try? Data(contentsOf: manifestURL)
+        let previousManifest = previousManifestData.flatMap(Self.decodeManifest)
+        let previousLegacyExisted = fileManager.fileExists(atPath: fileURL.path)
         let previousLegacyData = try? Data(contentsOf: fileURL)
         let preparedURL = stagingDirectory.appendingPathComponent("background.png")
+        let preparedData: Data
         do {
             try PanelBackgroundMediaImporter.writeStaticThumbnail(
                 from: sourceURL,
                 to: preparedURL
             )
-            let data = try Data(contentsOf: preparedURL)
-            try data.write(to: fileURL, options: .atomic)
+            preparedData = try Data(contentsOf: preparedURL)
         } catch let error as PanelBackgroundImportError {
             _ = removeIfPresent(stagingDirectory)
             throw error
@@ -269,30 +275,43 @@ final class PanelBackgroundStore: ObservableObject {
             _ = removeIfPresent(stagingDirectory)
             throw PanelBackgroundImportError.unableToWrite
         }
+        do {
+            try writeLegacyOperation(preparedData, fileURL)
+        } catch {
+            try recoverFailedCompatibilityMutation(
+                previousManifestExisted: previousManifestExisted,
+                previousManifestData: previousManifestData,
+                previousLegacyExisted: previousLegacyExisted,
+                previousLegacyData: previousLegacyData,
+                stagingDirectory: stagingDirectory
+            )
+        }
 
         guard Self.isActualRegularFile(
             fileURL,
             inside: directoryURL,
             fileManager: fileManager
         ), let preparedImage = Self.loadImage(at: fileURL) else {
-            let rollbackFailed = restoreLegacy(previousLegacyData)
-                || removeIfPresent(stagingDirectory)
-            asset = previousAsset
-            throw rollbackFailed
-                ? PanelBackgroundImportError.rollbackFailed
-                : PanelBackgroundImportError.unableToWrite
+            try recoverFailedCompatibilityMutation(
+                previousManifestExisted: previousManifestExisted,
+                previousManifestData: previousManifestData,
+                previousLegacyExisted: previousLegacyExisted,
+                previousLegacyData: previousLegacyData,
+                stagingDirectory: stagingDirectory
+            )
         }
 
-        if previousManifest != nil {
+        if previousManifestExisted {
             do {
                 try fileManager.removeItem(at: manifestURL)
             } catch {
-                let rollbackFailed = restoreLegacy(previousLegacyData)
-                    || removeIfPresent(stagingDirectory)
-                asset = previousAsset
-                throw rollbackFailed
-                    ? PanelBackgroundImportError.rollbackFailed
-                    : PanelBackgroundImportError.unableToWrite
+                try recoverFailedCompatibilityMutation(
+                    previousManifestExisted: previousManifestExisted,
+                    previousManifestData: previousManifestData,
+                    previousLegacyExisted: previousLegacyExisted,
+                    previousLegacyData: previousLegacyData,
+                    stagingDirectory: stagingDirectory
+                )
             }
         }
 
@@ -335,7 +354,6 @@ final class PanelBackgroundStore: ObservableObject {
 
     private func recoverFailedImport(
         originalError: Error,
-        previousAsset: PanelBackgroundAsset?,
         previousManifestData: Data?,
         finalURLs: [URL],
         stagingDirectory: URL
@@ -355,8 +373,11 @@ final class PanelBackgroundStore: ObservableObject {
                     fileManager: fileManager
                 ) {
                     asset = coherentAsset
+                    _ = removeUnreferenced(finalURLs)
                 } else {
-                    asset = previousAsset
+                    _ = clearInvalidManifest()
+                    asset = loadAuthoritativeAssetFromDisk()
+                    _ = removeKnownUnreferenced(finalURLs)
                 }
                 _ = removeIfPresent(stagingDirectory)
                 throw PanelBackgroundImportError.rollbackFailed
@@ -371,7 +392,7 @@ final class PanelBackgroundStore: ObservableObject {
             at: fileURL,
             directoryURL: directoryURL,
             fileManager: fileManager
-        ) ?? previousAsset
+        )
 
         let cleanupFailed = removeUnreferenced(finalURLs)
             || removeIfPresent(stagingDirectory)
@@ -380,6 +401,27 @@ final class PanelBackgroundStore: ObservableObject {
         }
 
         throw originalError
+    }
+
+    private func clearInvalidManifest() -> Bool {
+        guard fileManager.fileExists(atPath: manifestURL.path) else { return false }
+        do {
+            try fileManager.removeItem(at: manifestURL)
+            return false
+        } catch {
+            guard fileManager.fileExists(atPath: manifestURL.path) else {
+                return false
+            }
+            let quarantineURL = directoryURL.appendingPathComponent(
+                "invalid-manifest-\(UUID().uuidString).json"
+            )
+            do {
+                try fileManager.moveItem(at: manifestURL, to: quarantineURL)
+                return false
+            } catch {
+                return true
+            }
+        }
     }
 
     private func restoreManifest(_ previousData: Data?) throws {
@@ -403,6 +445,84 @@ final class PanelBackgroundStore: ObservableObject {
         }
     }
 
+    private func recoverFailedCompatibilityMutation(
+        previousManifestExisted: Bool,
+        previousManifestData: Data?,
+        previousLegacyExisted: Bool,
+        previousLegacyData: Data?,
+        stagingDirectory: URL
+    ) throws -> Never {
+        if !fileMatchesSnapshot(
+            at: manifestURL,
+            existed: previousManifestExisted,
+            data: previousManifestData
+        ) {
+            if previousManifestExisted, let previousManifestData {
+                try? restoreManifest(previousManifestData)
+            } else if !previousManifestExisted {
+                try? restoreManifest(nil)
+            }
+        }
+        if !fileMatchesSnapshot(
+            at: fileURL,
+            existed: previousLegacyExisted,
+            data: previousLegacyData
+        ) {
+            if previousLegacyExisted, previousLegacyData == nil {
+                // Exact bytes are unavailable; reconciliation below adopts disk state.
+            } else {
+                _ = restoreLegacy(previousLegacyData)
+            }
+        }
+        let cleanupFailed = removeIfPresent(stagingDirectory)
+        let exactPrior = fileMatchesSnapshot(
+            at: manifestURL,
+            existed: previousManifestExisted,
+            data: previousManifestData
+        ) && fileMatchesSnapshot(
+            at: fileURL,
+            existed: previousLegacyExisted,
+            data: previousLegacyData
+        )
+        if !exactPrior,
+           fileManager.fileExists(atPath: manifestURL.path),
+           Self.loadManifestAsset(
+               from: manifestURL,
+               directoryURL: directoryURL,
+               fileManager: fileManager
+           ) == nil {
+            _ = clearInvalidManifest()
+        }
+        asset = loadAuthoritativeAssetFromDisk()
+        throw exactPrior && !cleanupFailed
+            ? PanelBackgroundImportError.unableToWrite
+            : PanelBackgroundImportError.rollbackFailed
+    }
+
+    private func fileMatchesSnapshot(
+        at url: URL,
+        existed: Bool,
+        data: Data?
+    ) -> Bool {
+        let currentlyExists = fileManager.fileExists(atPath: url.path)
+        let currentData = try? Data(contentsOf: url)
+        return currentlyExists == existed
+            && currentData == data
+            && (!currentlyExists || currentData != nil)
+    }
+
+    private func loadAuthoritativeAssetFromDisk() -> PanelBackgroundAsset? {
+        Self.loadManifestAsset(
+            from: manifestURL,
+            directoryURL: directoryURL,
+            fileManager: fileManager
+        ) ?? Self.loadLegacyAsset(
+            at: fileURL,
+            directoryURL: directoryURL,
+            fileManager: fileManager
+        )
+    }
+
     private func removeUnreferenced(_ urls: [URL]) -> Bool {
         let currentManifestData = try? Data(contentsOf: manifestURL)
         let currentManifest = currentManifestData.flatMap(Self.decodeManifest)
@@ -419,6 +539,14 @@ final class PanelBackgroundStore: ObservableObject {
         var failed = false
         for url in Set(urls.map(\.path)).map({ URL(fileURLWithPath: $0) })
         where !retainedPaths.contains(url.path) {
+            failed = removeIfPresent(url) || failed
+        }
+        return failed
+    }
+
+    private func removeKnownUnreferenced(_ urls: [URL]) -> Bool {
+        var failed = false
+        for url in Set(urls.map(\.path)).map({ URL(fileURLWithPath: $0) }) {
             failed = removeIfPresent(url) || failed
         }
         return failed
