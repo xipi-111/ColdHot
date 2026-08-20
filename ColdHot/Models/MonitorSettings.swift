@@ -67,6 +67,8 @@ final class MonitorSettings: ObservableObject {
 
     @Published private(set) var isPanelBackgroundEnabled: Bool
 
+    @Published private(set) var isPanelBackgroundAudioEnabled: Bool
+
     @Published private(set) var panelBackgroundDimOpacity: Double
 
     @Published private(set) var panelCardOpacity: Double
@@ -125,6 +127,9 @@ final class MonitorSettings: ObservableObject {
 
         isPanelBackgroundEnabled = defaults.object(forKey: Keys.isPanelBackgroundEnabled) as? Bool
             ?? false
+        isPanelBackgroundAudioEnabled = defaults.object(
+            forKey: Keys.isPanelBackgroundAudioEnabled
+        ) as? Bool ?? false
 
         if defaults.object(forKey: Keys.panelBackgroundDimOpacity) != nil {
             let storedOpacity = defaults.double(forKey: Keys.panelBackgroundDimOpacity)
@@ -254,6 +259,11 @@ final class MonitorSettings: ObservableObject {
         defaults.set(enabled, forKey: Keys.isPanelBackgroundEnabled)
     }
 
+    func setPanelBackgroundAudioEnabled(_ enabled: Bool) {
+        isPanelBackgroundAudioEnabled = enabled
+        defaults.set(enabled, forKey: Keys.isPanelBackgroundAudioEnabled)
+    }
+
     func setPanelBackgroundDimOpacity(_ opacity: Double) {
         guard opacity.isFinite else { return }
         let clamped = min(max(opacity, 0), 0.70)
@@ -314,14 +324,24 @@ final class MonitorSettings: ObservableObject {
         )
     }
 
-    func didReplacePanelBackgroundImage() {
+    func didReplacePanelBackground(kind: PanelBackgroundMediaKind) {
         resetPanelBackgroundTransform()
         setPanelBackgroundEnabled(true)
+        if kind == .video { setPanelBackgroundAudioEnabled(false) }
+    }
+
+    func didReplacePanelBackgroundImage() {
+        didReplacePanelBackground(kind: .staticImage)
+    }
+
+    func didRemovePanelBackground() {
+        setPanelBackgroundAudioEnabled(false)
+        setPanelBackgroundEnabled(false)
+        resetPanelBackgroundTransform()
     }
 
     func didRemovePanelBackgroundImage() {
-        setPanelBackgroundEnabled(false)
-        resetPanelBackgroundTransform()
+        didRemovePanelBackground()
     }
 
     func applyPreset(_ preset: MonitoringPreset) {
@@ -371,6 +391,7 @@ final class MonitorSettings: ObservableObject {
         showDockQuickControl = true
         thresholdNotificationsEnabled = false
         thresholdRecoveryNotificationsEnabled = true
+        setPanelBackgroundAudioEnabled(false)
         setPanelBackgroundEnabled(false)
         setPanelBackgroundDimOpacity(Self.defaultPanelBackgroundDimOpacity)
         setPanelCardOpacity(Self.defaultPanelCardOpacity)
@@ -440,6 +461,7 @@ final class MonitorSettings: ObservableObject {
         static let thresholdRecoveryNotificationsEnabled = "thresholdRecoveryNotificationsEnabled"
         static let hasCompletedOnboarding = "hasCompletedOnboarding"
         static let isPanelBackgroundEnabled = "isPanelBackgroundEnabled"
+        static let isPanelBackgroundAudioEnabled = "isPanelBackgroundAudioEnabled"
         static let panelBackgroundDimOpacity = "panelBackgroundDimOpacity"
         static let panelCardOpacity = "panelCardOpacity"
         static let panelPrimaryTextOpacity = "panelPrimaryTextOpacity"
