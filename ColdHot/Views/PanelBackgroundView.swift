@@ -241,6 +241,27 @@ struct PanelBackgroundView: View {
     let dimOpacity: Double
     let zoom: Double
     let position: CGPoint
+    private let asset: PanelBackgroundAsset?
+    private let playbackController: PanelBackgroundPlaybackController?
+    private let playbackIntent: PanelBackgroundPlaybackIntent?
+
+    init(
+        asset: PanelBackgroundAsset?,
+        controller: PanelBackgroundPlaybackController,
+        intent: PanelBackgroundPlaybackIntent,
+        dimOpacity: Double,
+        zoom: Double = 1,
+        position: CGPoint = .zero
+    ) {
+        image = asset?.posterImage
+        isEnabled = intent.isEnabled
+        self.dimOpacity = dimOpacity
+        self.zoom = zoom
+        self.position = position
+        self.asset = asset
+        playbackController = controller
+        playbackIntent = intent
+    }
 
     init(
         image: NSImage?,
@@ -254,6 +275,9 @@ struct PanelBackgroundView: View {
         self.dimOpacity = dimOpacity
         self.zoom = zoom
         self.position = position
+        asset = nil
+        playbackController = nil
+        playbackIntent = nil
     }
 
     var body: some View {
@@ -269,16 +293,30 @@ struct PanelBackgroundView: View {
                         zoom: zoom,
                         position: position
                     )
-                    Image(nsImage: image)
-                        .resizable()
-                        .frame(
-                            width: transform.renderedSize.width,
-                            height: transform.renderedSize.height
-                        )
-                        .position(
-                            x: proxy.size.width / 2 + transform.offset.width,
-                            y: proxy.size.height / 2 + transform.offset.height
-                        )
+                    ZStack {
+                        Image(nsImage: image)
+                            .resizable()
+
+                        if let asset,
+                           asset.isDynamic,
+                           asset.mediaURL != nil,
+                           let playbackController,
+                           let playbackIntent {
+                            PanelBackgroundDynamicPlayerLayer(
+                                assetID: asset.id,
+                                controller: playbackController,
+                                intent: playbackIntent
+                            )
+                        }
+                    }
+                    .frame(
+                        width: transform.renderedSize.width,
+                        height: transform.renderedSize.height
+                    )
+                    .position(
+                        x: proxy.size.width / 2 + transform.offset.width,
+                        y: proxy.size.height / 2 + transform.offset.height
+                    )
                 }
 
                 Color.black.opacity(min(max(dimOpacity, 0), 0.70))
@@ -287,6 +325,21 @@ struct PanelBackgroundView: View {
         .clipped()
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+}
+
+private struct PanelBackgroundDynamicPlayerLayer: View {
+    let assetID: String
+    @ObservedObject var controller: PanelBackgroundPlaybackController
+    let intent: PanelBackgroundPlaybackIntent
+
+    @ViewBuilder
+    var body: some View {
+        if intent.shouldPlay,
+           controller.activeAssetID == assetID,
+           controller.playbackErrorMessage == nil {
+            PanelBackgroundPlayerView(player: controller.player)
+        }
     }
 }
 
