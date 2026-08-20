@@ -241,6 +241,67 @@ enum PanelBackgroundCheck {
         expect(!reducedIntent.shouldPlay)
         expect(reducedIntent.shouldMute)
         expect(reducedIntent.shouldShowReduceMotionMessage)
+
+        let preparationCounter = SettingsPreviewPreparationCounter()
+        let guardedController = PanelBackgroundPlaybackController(
+            dependencies: PanelBackgroundPlaybackDependencies(
+                preparePlayerItem: { _ in
+                    preparationCounter.count += 1
+                    throw CancellationError()
+                },
+                observePlayerItemStatus: { item, statusHandler in
+                    item.observe(\.status, options: [.initial, .new]) { item, _ in
+                        let status = item.status
+                        let errorDescription = item.error?.localizedDescription
+                        DispatchQueue.main.async {
+                            statusHandler(status, errorDescription)
+                        }
+                    }
+                }
+            )
+        )
+        let guardedSession = SettingsPanelBackgroundPreviewSession(
+            controller: guardedController
+        )
+        guardedSession.didAppear(
+            asset: audioVideo,
+            isEnabled: true,
+            reduceMotion: false
+        )
+        RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        expect(guardedController.activeAssetID == audioVideo.id)
+        expect(preparationCounter.count == 1)
+        guardedSession.didDisappear()
+        expect(guardedController.activeAssetID == nil)
+
+        let lateReplacement = PanelBackgroundAsset(
+            id: "settings-preview-late-replacement",
+            kind: .video,
+            posterImage: poster,
+            mediaURL: URL(fileURLWithPath: "/tmp/settings-preview-late-replacement.mov"),
+            hasAudio: true
+        )
+        guardedSession.didChangeAsset(
+            lateReplacement,
+            isEnabled: true,
+            reduceMotion: false
+        )
+        RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        expect(guardedController.activeAssetID == nil)
+        expect(preparationCounter.count == 1)
+        expect(guardedController.player.isMuted)
+        expect(!guardedSession.isAudioRequested)
+
+        guardedSession.didAppear(
+            asset: lateReplacement,
+            isEnabled: true,
+            reduceMotion: false
+        )
+        RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        expect(guardedController.activeAssetID == lateReplacement.id)
+        expect(preparationCounter.count == 2)
+        expect(guardedController.player.isMuted)
+        expect(!guardedSession.isAudioRequested)
     }
 
     private static func checkBackgroundTransformGeometry() {
@@ -1228,6 +1289,11 @@ enum PanelBackgroundCheck {
             fatalError("Check failed", file: file, line: line)
         }
     }
+}
+
+@MainActor
+private final class SettingsPreviewPreparationCounter {
+    var count = 0
 }
 
 @MainActor

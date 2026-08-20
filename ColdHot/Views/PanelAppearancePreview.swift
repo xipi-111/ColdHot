@@ -93,6 +93,10 @@ final class SettingsPanelBackgroundPreviewSession: ObservableObject {
         reduceMotion: Bool
     ) {
         synchronizationGeneration &+= 1
+        guard isRootVisible else {
+            controller.reset()
+            return
+        }
         synchronizeImmediately(
             asset: asset,
             isEnabled: isEnabled,

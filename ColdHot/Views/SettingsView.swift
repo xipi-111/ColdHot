@@ -18,12 +18,11 @@ enum SettingsPanelBackgroundOperations {
         do {
             try await store.importBackground(from: sourceURL)
         } catch {
-            let didCommit = isCleanupFailure(error)
-                && store.asset?.id != previousAssetID
-                && store.asset != nil
-            if didCommit, let asset = store.asset {
-                settings.didReplacePanelBackground(kind: asset.kind)
-            }
+            let didCommit = reconcileAuthorityChange(
+                previousAssetID: previousAssetID,
+                store: store,
+                settings: settings
+            )
             return SettingsPanelBackgroundOperationResult(
                 didCommit: didCommit,
                 error: error
@@ -48,12 +47,11 @@ enum SettingsPanelBackgroundOperations {
         do {
             try store.removeBackground()
         } catch {
-            let didCommit = previousAssetID != nil
-                && store.asset == nil
-                && isCleanupFailure(error)
-            if didCommit {
-                settings.didRemovePanelBackground()
-            }
+            let didCommit = reconcileAuthorityChange(
+                previousAssetID: previousAssetID,
+                store: store,
+                settings: settings
+            )
             return SettingsPanelBackgroundOperationResult(
                 didCommit: didCommit,
                 error: error
@@ -64,10 +62,18 @@ enum SettingsPanelBackgroundOperations {
         return SettingsPanelBackgroundOperationResult(didCommit: true, error: nil)
     }
 
-    private static func isCleanupFailure(_ error: Error) -> Bool {
-        guard let importError = error as? PanelBackgroundImportError else { return false }
-        if case .cleanupFailed = importError { return true }
-        return false
+    private static func reconcileAuthorityChange(
+        previousAssetID: String?,
+        store: PanelBackgroundStore,
+        settings: MonitorSettings
+    ) -> Bool {
+        guard store.asset?.id != previousAssetID else { return false }
+        if let asset = store.asset {
+            settings.didReplacePanelBackground(kind: asset.kind)
+        } else {
+            settings.didRemovePanelBackground()
+        }
+        return true
     }
 }
 

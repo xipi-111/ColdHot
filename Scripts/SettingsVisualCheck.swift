@@ -135,6 +135,22 @@ enum SettingsVisualCheck {
             withIntermediateDirectories: true
         )
 
+        if ProcessInfo.processInfo.environment["COLDHOT_TASK6_OPERATIONS_ONLY"] == "1" {
+            let focusedFixtureRoot = FileManager.default.temporaryDirectory.appendingPathComponent(
+                "coldhot-settings-task6-operation-fixtures-\(UUID().uuidString)",
+                isDirectory: true
+            )
+            try FileManager.default.createDirectory(
+                at: focusedFixtureRoot,
+                withIntermediateDirectories: true
+            )
+            defer { try? FileManager.default.removeItem(at: focusedFixtureRoot) }
+            try runAsyncCheck {
+                try await verifyBackgroundOperationRecovery(in: focusedFixtureRoot)
+            }
+            return
+        }
+
         let appearances: [(slug: String, name: NSAppearance.Name)] = [
             ("aqua", .aqua),
             ("darkAqua", .darkAqua)
@@ -719,6 +735,181 @@ enum SettingsVisualCheck {
         expect(settings.panelBackgroundPositionX == 0)
         expect(settings.panelBackgroundPositionY == 0)
         expect(!settings.isPanelBackgroundAudioEnabled)
+
+        try await verifyRollbackFailureAdoptsReplacement(
+            in: fixtureRoot,
+            sourceURL: sourceURL,
+            settings: settings
+        )
+        try await verifyRollbackFailureClearsAuthority(
+            in: fixtureRoot,
+            sourceURL: sourceURL,
+            settings: settings
+        )
+        try await verifyUnchangedRollbackFailurePreservesSettings(
+            in: fixtureRoot,
+            sourceURL: sourceURL,
+            settings: settings
+        )
+    }
+
+    @MainActor
+    private static func verifyRollbackFailureAdoptsReplacement(
+        in fixtureRoot: URL,
+        sourceURL: URL,
+        settings: MonitorSettings
+    ) async throws {
+        let directory = fixtureRoot.appendingPathComponent(
+            "operation-rollback-adopts-replacement",
+            isDirectory: true
+        )
+        let initialStore = PanelBackgroundStore(directoryURL: directory)
+        try await initialStore.importBackground(from: sourceURL)
+        let previousID = initialStore.asset?.id
+        let fileManager = SettingsRollbackFaultFileManager()
+        let store = PanelBackgroundStore(
+            directoryURL: directory,
+            fileManager: fileManager,
+            prepareImport: makeVideoPreparation(sourceImageURL: sourceURL),
+            writeManifest: fileManager.writeManifest
+        )
+        fileManager.hideCommittedPosterOnce = true
+        fileManager.failManifestOperationNumbers = [2]
+        settings.setPanelBackgroundEnabled(false)
+        settings.setPanelBackgroundZoom(1.75)
+        settings.setPanelBackgroundPosition(x: 0.55, y: -0.45)
+        settings.setPanelBackgroundAudioEnabled(true)
+
+        let result = await SettingsPanelBackgroundOperations.importBackground(
+            from: sourceURL,
+            store: store,
+            settings: settings
+        )
+
+        expect(result.didCommit)
+        guard let error = result.error as? PanelBackgroundImportError,
+              case .rollbackFailed = error else {
+            fatalError("Expected rollbackFailed after adopting replacement authority")
+        }
+        expect(store.asset?.id != previousID)
+        expect(store.asset?.kind == .video)
+        expect(settings.isPanelBackgroundEnabled)
+        expect(settings.panelBackgroundZoom == 1)
+        expect(settings.panelBackgroundPositionX == 0)
+        expect(settings.panelBackgroundPositionY == 0)
+        expect(!settings.isPanelBackgroundAudioEnabled)
+    }
+
+    @MainActor
+    private static func verifyRollbackFailureClearsAuthority(
+        in fixtureRoot: URL,
+        sourceURL: URL,
+        settings: MonitorSettings
+    ) async throws {
+        let directory = fixtureRoot.appendingPathComponent(
+            "operation-rollback-clears-authority",
+            isDirectory: true
+        )
+        let initialStore = PanelBackgroundStore(directoryURL: directory)
+        try await initialStore.importBackground(from: sourceURL)
+        let fileManager = SettingsRollbackFaultFileManager()
+        let store = PanelBackgroundStore(
+            directoryURL: directory,
+            fileManager: fileManager,
+            writeManifest: fileManager.writeManifest
+        )
+        fileManager.corruptManifestOperationNumbers = [1]
+        fileManager.failManifestOperationNumbers = [2]
+        settings.setPanelBackgroundEnabled(true)
+        settings.setPanelBackgroundZoom(1.6)
+        settings.setPanelBackgroundPosition(x: -0.4, y: 0.65)
+        settings.setPanelBackgroundAudioEnabled(true)
+
+        let result = await SettingsPanelBackgroundOperations.importBackground(
+            from: sourceURL,
+            store: store,
+            settings: settings
+        )
+
+        expect(result.didCommit)
+        guard let error = result.error as? PanelBackgroundImportError,
+              case .rollbackFailed = error else {
+            fatalError("Expected rollbackFailed after clearing invalid authority")
+        }
+        expect(store.asset == nil)
+        expect(!settings.isPanelBackgroundEnabled)
+        expect(settings.panelBackgroundZoom == 1)
+        expect(settings.panelBackgroundPositionX == 0)
+        expect(settings.panelBackgroundPositionY == 0)
+        expect(!settings.isPanelBackgroundAudioEnabled)
+    }
+
+    @MainActor
+    private static func verifyUnchangedRollbackFailurePreservesSettings(
+        in fixtureRoot: URL,
+        sourceURL: URL,
+        settings: MonitorSettings
+    ) async throws {
+        let directory = fixtureRoot.appendingPathComponent(
+            "operation-rollback-preserves-authority",
+            isDirectory: true
+        )
+        let initialStore = PanelBackgroundStore(directoryURL: directory)
+        try await initialStore.importBackground(from: sourceURL)
+        let previousID = initialStore.asset?.id
+        let fileManager = SettingsRollbackFaultFileManager()
+        let store = PanelBackgroundStore(
+            directoryURL: directory,
+            fileManager: fileManager,
+            prepareImport: makeVideoPreparation(sourceImageURL: sourceURL),
+            writeManifest: fileManager.writeManifest
+        )
+        fileManager.failMoveDestinationPrefix = "poster-"
+        fileManager.failRemoveDestinationPrefix = "media-"
+        settings.setPanelBackgroundEnabled(false)
+        settings.setPanelBackgroundZoom(1.7)
+        settings.setPanelBackgroundPosition(x: 0.35, y: -0.75)
+        settings.setPanelBackgroundAudioEnabled(true)
+
+        let result = await SettingsPanelBackgroundOperations.importBackground(
+            from: sourceURL,
+            store: store,
+            settings: settings
+        )
+
+        expect(!result.didCommit)
+        guard let error = result.error as? PanelBackgroundImportError,
+              case .rollbackFailed = error else {
+            fatalError("Expected rollbackFailed with unchanged authority")
+        }
+        expect(store.asset?.id == previousID)
+        expect(!settings.isPanelBackgroundEnabled)
+        expect(settings.panelBackgroundZoom == 1.7)
+        expect(settings.panelBackgroundPositionX == 0.35)
+        expect(settings.panelBackgroundPositionY == -0.75)
+        expect(settings.isPanelBackgroundAudioEnabled)
+    }
+
+    private static func makeVideoPreparation(
+        sourceImageURL: URL
+    ) -> PanelBackgroundPrepareImport {
+        { _, stagingDirectory in
+            try FileManager.default.createDirectory(
+                at: stagingDirectory,
+                withIntermediateDirectories: true
+            )
+            let mediaURL = stagingDirectory.appendingPathComponent("prepared.mov")
+            let posterURL = stagingDirectory.appendingPathComponent("prepared-poster.png")
+            try Data([0]).write(to: mediaURL)
+            try FileManager.default.copyItem(at: sourceImageURL, to: posterURL)
+            return PanelBackgroundPreparedImport(
+                kind: .video,
+                mediaURL: mediaURL,
+                posterURL: posterURL,
+                originalTypeIdentifier: "com.apple.quicktime-movie",
+                hasAudio: true
+            )
+        }
     }
 
     @MainActor
@@ -928,6 +1119,61 @@ private final class SettingsCleanupFailingFileManager: FileManager, @unchecked S
         }
         try super.removeItem(at: URL)
     }
+}
+
+private final class SettingsRollbackFaultFileManager: FileManager, @unchecked Sendable {
+    var failMoveDestinationPrefix: String?
+    var failRemoveDestinationPrefix: String?
+    var failManifestOperationNumbers: Set<Int> = []
+    var corruptManifestOperationNumbers: Set<Int> = []
+    var hideCommittedPosterOnce = false
+
+    private var manifestOperationCount = 0
+    private var didFailRemovePrefix = false
+
+    override func moveItem(at sourceURL: URL, to destinationURL: URL) throws {
+        if let prefix = failMoveDestinationPrefix,
+           destinationURL.lastPathComponent.hasPrefix(prefix) {
+            throw SettingsInjectedStoreFailure.requested
+        }
+        try super.moveItem(at: sourceURL, to: destinationURL)
+    }
+
+    func writeManifest(_ data: Data, to url: URL) throws {
+        manifestOperationCount += 1
+        if failManifestOperationNumbers.contains(manifestOperationCount) {
+            throw SettingsInjectedStoreFailure.requested
+        }
+        if corruptManifestOperationNumbers.contains(manifestOperationCount) {
+            try Data("{ corrupt".utf8).write(to: url, options: .atomic)
+            throw SettingsInjectedStoreFailure.requested
+        }
+        try data.write(to: url, options: .atomic)
+    }
+
+    override func removeItem(at URL: URL) throws {
+        if let prefix = failRemoveDestinationPrefix,
+           URL.lastPathComponent.hasPrefix(prefix),
+           !didFailRemovePrefix {
+            didFailRemovePrefix = true
+            throw SettingsInjectedStoreFailure.requested
+        }
+        try super.removeItem(at: URL)
+    }
+
+    override func fileExists(atPath path: String) -> Bool {
+        if hideCommittedPosterOnce,
+           manifestOperationCount > 0,
+           URL(fileURLWithPath: path).lastPathComponent.hasPrefix("poster-") {
+            hideCommittedPosterOnce = false
+            return false
+        }
+        return super.fileExists(atPath: path)
+    }
+}
+
+private enum SettingsInjectedStoreFailure: Error {
+    case requested
 }
 
 @MainActor
