@@ -13,6 +13,68 @@ struct PanelAppearancePreview: View {
     let progressOpacity: Double
     let enabledMetrics: [MetricKind]
     let showsDockQuickControl: Bool
+    private let asset: PanelBackgroundAsset?
+    private let playbackController: PanelBackgroundPlaybackController?
+    private let playbackIntent: PanelBackgroundPlaybackIntent?
+
+    init(
+        asset: PanelBackgroundAsset?,
+        controller: PanelBackgroundPlaybackController,
+        intent: PanelBackgroundPlaybackIntent,
+        dimOpacity: Double,
+        backgroundZoom: Double,
+        backgroundPosition: CGPoint,
+        cardOpacity: Double,
+        primaryTextOpacity: Double,
+        secondaryTextOpacity: Double,
+        progressOpacity: Double,
+        enabledMetrics: [MetricKind],
+        showsDockQuickControl: Bool
+    ) {
+        image = asset?.posterImage
+        isBackgroundEnabled = intent.isEnabled
+        self.dimOpacity = dimOpacity
+        self.backgroundZoom = backgroundZoom
+        self.backgroundPosition = backgroundPosition
+        self.cardOpacity = cardOpacity
+        self.primaryTextOpacity = primaryTextOpacity
+        self.secondaryTextOpacity = secondaryTextOpacity
+        self.progressOpacity = progressOpacity
+        self.enabledMetrics = enabledMetrics
+        self.showsDockQuickControl = showsDockQuickControl
+        self.asset = asset
+        playbackController = controller
+        playbackIntent = intent
+    }
+
+    init(
+        image: NSImage?,
+        isBackgroundEnabled: Bool,
+        dimOpacity: Double,
+        backgroundZoom: Double,
+        backgroundPosition: CGPoint,
+        cardOpacity: Double,
+        primaryTextOpacity: Double,
+        secondaryTextOpacity: Double,
+        progressOpacity: Double,
+        enabledMetrics: [MetricKind],
+        showsDockQuickControl: Bool
+    ) {
+        self.image = image
+        self.isBackgroundEnabled = isBackgroundEnabled
+        self.dimOpacity = dimOpacity
+        self.backgroundZoom = backgroundZoom
+        self.backgroundPosition = backgroundPosition
+        self.cardOpacity = cardOpacity
+        self.primaryTextOpacity = primaryTextOpacity
+        self.secondaryTextOpacity = secondaryTextOpacity
+        self.progressOpacity = progressOpacity
+        self.enabledMetrics = enabledMetrics
+        self.showsDockQuickControl = showsDockQuickControl
+        asset = nil
+        playbackController = nil
+        playbackIntent = nil
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -59,13 +121,24 @@ struct PanelAppearancePreview: View {
         }
         .frame(width: PanelLayout.width)
         .background {
-            PanelBackgroundView(
-                image: image,
-                isEnabled: isBackgroundEnabled,
-                dimOpacity: dimOpacity,
-                zoom: backgroundZoom,
-                position: backgroundPosition
-            )
+            if let playbackController, let playbackIntent {
+                PanelBackgroundView(
+                    asset: asset,
+                    controller: playbackController,
+                    intent: playbackIntent,
+                    dimOpacity: dimOpacity,
+                    zoom: backgroundZoom,
+                    position: backgroundPosition
+                )
+            } else {
+                PanelBackgroundView(
+                    image: image,
+                    isEnabled: isBackgroundEnabled,
+                    dimOpacity: dimOpacity,
+                    zoom: backgroundZoom,
+                    position: backgroundPosition
+                )
+            }
         }
         .panelReadability(
             cardOpacity: cardOpacity,
@@ -201,6 +274,154 @@ struct PanelAppearancePreview: View {
             ("正常", "系统热压力", nil)
         case .battery:
             ("80%", "已连接电源", 0.80)
+        }
+    }
+}
+
+enum PanelBackgroundMenuPolicy {
+    static func showsAudioToggle(for asset: PanelBackgroundAsset?) -> Bool {
+        asset?.kind == .video && asset?.hasAudio == true
+    }
+
+    static func intent(
+        asset: PanelBackgroundAsset?,
+        isEnabled: Bool,
+        isVisible: Bool,
+        reduceMotion: Bool,
+        audioRequested: Bool
+    ) -> PanelBackgroundPlaybackIntent {
+        PanelBackgroundPlaybackIntent(
+            isEnabled: isEnabled,
+            isVisible: isVisible,
+            reduceMotion: reduceMotion,
+            audioRequested: audioRequested,
+            assetIsDynamic: asset?.isDynamic == true,
+            assetHasAudio: asset?.hasAudio == true
+        )
+    }
+}
+
+struct PanelBackgroundMenuLifecycle {
+    private(set) var isVisible = false
+
+    mutating func didAppear() {
+        isVisible = true
+    }
+
+    mutating func didDisappear() {
+        isVisible = false
+    }
+
+    func intent(
+        asset: PanelBackgroundAsset?,
+        isEnabled: Bool,
+        reduceMotion: Bool,
+        audioRequested: Bool
+    ) -> PanelBackgroundPlaybackIntent {
+        PanelBackgroundMenuPolicy.intent(
+            asset: asset,
+            isEnabled: isEnabled,
+            isVisible: isVisible,
+            reduceMotion: reduceMotion,
+            audioRequested: audioRequested
+        )
+    }
+}
+
+private struct PanelAccessibilityIdentifierReporterKey: EnvironmentKey {
+    static let defaultValue: ((String) -> Void)? = nil
+}
+
+private struct PanelAccessibilityLabelReporterKey: EnvironmentKey {
+    static let defaultValue: ((String) -> Void)? = nil
+}
+
+private struct PanelAccessibilityActionReporterKey: EnvironmentKey {
+    static let defaultValue: ((String, @escaping () -> Void) -> Void)? = nil
+}
+
+extension EnvironmentValues {
+    var panelAccessibilityIdentifierReporter: ((String) -> Void)? {
+        get { self[PanelAccessibilityIdentifierReporterKey.self] }
+        set { self[PanelAccessibilityIdentifierReporterKey.self] = newValue }
+    }
+
+    var panelAccessibilityLabelReporter: ((String) -> Void)? {
+        get { self[PanelAccessibilityLabelReporterKey.self] }
+        set { self[PanelAccessibilityLabelReporterKey.self] = newValue }
+    }
+
+    var panelAccessibilityActionReporter: (
+        (String, @escaping () -> Void) -> Void
+    )? {
+        get { self[PanelAccessibilityActionReporterKey.self] }
+        set { self[PanelAccessibilityActionReporterKey.self] = newValue }
+    }
+}
+
+struct PanelBackgroundAudioToggle: View {
+    let asset: PanelBackgroundAsset?
+    let isAudioEnabled: Bool
+    let reduceMotion: Bool
+    let setAudioEnabled: (Bool) -> Void
+
+    @Environment(\.panelAccessibilityIdentifierReporter) private var identifierReporter
+    @Environment(\.panelAccessibilityLabelReporter) private var labelReporter
+    @Environment(\.panelAccessibilityActionReporter) private var actionReporter
+
+    private let identifier = "panel-background-audio-toggle"
+
+    var body: some View {
+        if PanelBackgroundMenuPolicy.showsAudioToggle(for: asset) {
+            Button(action: toggleAudio) {
+                Image(systemName: isAudioEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
+            }
+            .buttonStyle(.plain)
+            .disabled(reduceMotion)
+            .accessibilityIdentifier(identifier)
+            .accessibilityLabel(accessibilityLabel)
+            .help(accessibilityLabel)
+            .onAppear {
+                identifierReporter?(identifier)
+                labelReporter?(accessibilityLabel)
+                actionReporter?(identifier, toggleAudio)
+            }
+        }
+    }
+
+    private var accessibilityLabel: String {
+        isAudioEnabled ? "关闭视频背景声音" : "开启视频背景声音"
+    }
+
+    private func toggleAudio() {
+        guard !reduceMotion else { return }
+        setAudioEnabled(!isAudioEnabled)
+    }
+}
+
+struct PanelBackgroundReduceMotionMessage: View {
+    let asset: PanelBackgroundAsset?
+    let isEnabled: Bool
+    let reduceMotion: Bool
+
+    @Environment(\.panelAccessibilityIdentifierReporter) private var identifierReporter
+    @Environment(\.panelAccessibilityLabelReporter) private var labelReporter
+
+    private let identifier = "panel-reduce-motion-message"
+    private let message = "减少动态效果已开启"
+
+    var body: some View {
+        if isEnabled, asset?.isDynamic == true, reduceMotion {
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .panelTextReadability(.secondary)
+                .accessibilityIdentifier(identifier)
+                .accessibilityLabel(message)
+                .onAppear {
+                    identifierReporter?(identifier)
+                    labelReporter?(message)
+                }
         }
     }
 }

@@ -17,6 +17,7 @@ enum PanelBackgroundCheck {
         checkBackgroundRendering()
         checkReadabilityRendering()
         checkPanelPreviewRendering()
+        checkMenuBackgroundPresentation()
         checkLiveScrollIndicatorSuppression()
         checkCollapsedScrollLock()
         if CommandLine.arguments.count == 3 {
@@ -500,6 +501,35 @@ enum PanelBackgroundCheck {
 
     @MainActor
     private static func checkPanelPreviewRendering() {
+        let dynamicAsset = PanelBackgroundAsset(
+            id: "preview-video",
+            kind: .video,
+            posterImage: solidImage(width: 800, height: 1_200, color: .systemBlue),
+            mediaURL: URL(fileURLWithPath: "/tmp/preview-video.mov"),
+            hasAudio: true
+        )
+        let dynamicIntent = PanelBackgroundPlaybackIntent(
+            isEnabled: true,
+            isVisible: false,
+            reduceMotion: false,
+            audioRequested: false,
+            assetIsDynamic: true,
+            assetHasAudio: true
+        )
+        _ = PanelAppearancePreview(
+            asset: dynamicAsset,
+            controller: PanelBackgroundPlaybackController(),
+            intent: dynamicIntent,
+            dimOpacity: 0.35,
+            backgroundZoom: 1.4,
+            backgroundPosition: CGPoint(x: -0.25, y: 0.5),
+            cardOpacity: 0.80,
+            primaryTextOpacity: 0.90,
+            secondaryTextOpacity: 0.70,
+            progressOpacity: 0.60,
+            enabledMetrics: MetricKind.allCases,
+            showsDockQuickControl: true
+        )
         let preview = PanelAppearancePreview(
             image: solidImage(width: 800, height: 1_200, color: .systemBlue),
             isBackgroundEnabled: true,
@@ -540,6 +570,190 @@ enum PanelBackgroundCheck {
         expect(documentHeight <= viewportHeight + 1)
         expect(!metricsScrollView.hasVerticalScroller)
 
+    }
+
+    @MainActor
+    private static func checkMenuBackgroundPresentation() {
+        let suiteName = "com.xipiyoung.ColdHot.panel-menu-presentation-check"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            fatalError("Unable to create isolated menu defaults suite")
+        }
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let settings = MonitorSettings(defaults: defaults)
+        let poster = solidImage(width: 320, height: 180, color: .systemBlue)
+        let staticAsset = PanelBackgroundAsset(
+            id: "static",
+            kind: .staticImage,
+            posterImage: poster,
+            mediaURL: nil,
+            hasAudio: false
+        )
+        let gifAsset = PanelBackgroundAsset(
+            id: "gif",
+            kind: .convertedGIF,
+            posterImage: poster,
+            mediaURL: URL(fileURLWithPath: "/tmp/menu.gif.mp4"),
+            hasAudio: false
+        )
+        let silentVideo = PanelBackgroundAsset(
+            id: "silent-video",
+            kind: .video,
+            posterImage: poster,
+            mediaURL: URL(fileURLWithPath: "/tmp/menu-silent.mov"),
+            hasAudio: false
+        )
+        let audioVideo = PanelBackgroundAsset(
+            id: "audio-video",
+            kind: .video,
+            posterImage: poster,
+            mediaURL: URL(fileURLWithPath: "/tmp/menu-audio.mov"),
+            hasAudio: true
+        )
+
+        for asset in [Optional<PanelBackgroundAsset>.none, staticAsset, gifAsset, silentVideo] {
+            let report = renderMenuPresentation(
+                asset: asset,
+                settings: settings,
+                isEnabled: true,
+                reduceMotion: false
+            )
+            expect(!report.identifiers.contains("panel-background-audio-toggle"))
+        }
+
+        var report = renderMenuPresentation(
+            asset: audioVideo,
+            settings: settings,
+            isEnabled: true,
+            reduceMotion: false
+        )
+        expect(report.identifiers.contains("panel-background-audio-toggle"))
+        expect(report.labels.contains("开启视频背景声音"))
+        guard let enableAudio = report.actions["panel-background-audio-toggle"] else {
+            fatalError("Missing menu audio action")
+        }
+        enableAudio()
+        expect(settings.isPanelBackgroundAudioEnabled)
+        expect(MonitorSettings(defaults: defaults).isPanelBackgroundAudioEnabled)
+
+        report = renderMenuPresentation(
+            asset: audioVideo,
+            settings: settings,
+            isEnabled: true,
+            reduceMotion: false
+        )
+        expect(report.labels.contains("关闭视频背景声音"))
+        guard let disableAudio = report.actions["panel-background-audio-toggle"] else {
+            fatalError("Missing menu audio action after enabling sound")
+        }
+        disableAudio()
+        expect(!settings.isPanelBackgroundAudioEnabled)
+        expect(!MonitorSettings(defaults: defaults).isPanelBackgroundAudioEnabled)
+
+        settings.setPanelBackgroundAudioEnabled(true)
+        let reducedReport = renderMenuPresentation(
+            asset: audioVideo,
+            settings: settings,
+            isEnabled: true,
+            reduceMotion: true
+        )
+        expect(reducedReport.identifiers.contains("panel-background-audio-toggle"))
+        expect(reducedReport.identifiers.contains("panel-reduce-motion-message"))
+        expect(reducedReport.labels.contains("减少动态效果已开启"))
+        reducedReport.actions["panel-background-audio-toggle"]?()
+        expect(settings.isPanelBackgroundAudioEnabled)
+
+        let reducedIntent = PanelBackgroundMenuPolicy.intent(
+            asset: audioVideo,
+            isEnabled: true,
+            isVisible: true,
+            reduceMotion: true,
+            audioRequested: settings.isPanelBackgroundAudioEnabled
+        )
+        expect(!reducedIntent.shouldPlay)
+        expect(reducedIntent.shouldMute)
+        expect(reducedIntent.shouldShowReduceMotionMessage)
+
+        var lifecycle = PanelBackgroundMenuLifecycle()
+        lifecycle.didAppear()
+        let visibleIntent = lifecycle.intent(
+            asset: audioVideo,
+            isEnabled: true,
+            reduceMotion: false,
+            audioRequested: settings.isPanelBackgroundAudioEnabled
+        )
+        expect(visibleIntent.shouldPlay)
+        expect(!visibleIntent.shouldMute)
+        lifecycle.didDisappear()
+        let hiddenIntent = lifecycle.intent(
+            asset: audioVideo,
+            isEnabled: true,
+            reduceMotion: false,
+            audioRequested: settings.isPanelBackgroundAudioEnabled
+        )
+        expect(!hiddenIntent.isVisible)
+        expect(!hiddenIntent.shouldPlay)
+        expect(hiddenIntent.shouldMute)
+        expect(settings.isPanelBackgroundAudioEnabled)
+        expect(MonitorSettings(defaults: defaults).isPanelBackgroundAudioEnabled)
+
+        for asset in [staticAsset, gifAsset, silentVideo] {
+            let intent = PanelBackgroundMenuPolicy.intent(
+                asset: asset,
+                isEnabled: true,
+                isVisible: true,
+                reduceMotion: true,
+                audioRequested: true
+            )
+            let assetReport = renderMenuPresentation(
+                asset: asset,
+                settings: settings,
+                isEnabled: true,
+                reduceMotion: true
+            )
+            expect(
+                assetReport.identifiers.contains("panel-reduce-motion-message")
+                    == intent.shouldShowReduceMotionMessage
+            )
+        }
+    }
+
+    @MainActor
+    private static func renderMenuPresentation(
+        asset: PanelBackgroundAsset?,
+        settings: MonitorSettings,
+        isEnabled: Bool,
+        reduceMotion: Bool
+    ) -> PanelMenuPresentationReport {
+        let report = PanelMenuPresentationReport()
+        let view = VStack {
+            PanelBackgroundReduceMotionMessage(
+                asset: asset,
+                isEnabled: isEnabled,
+                reduceMotion: reduceMotion
+            )
+            PanelBackgroundAudioToggle(
+                asset: asset,
+                isAudioEnabled: settings.isPanelBackgroundAudioEnabled,
+                reduceMotion: reduceMotion,
+                setAudioEnabled: settings.setPanelBackgroundAudioEnabled
+            )
+        }
+        .environment(\.panelAccessibilityIdentifierReporter) {
+            report.identifiers.insert($0)
+        }
+        .environment(\.panelAccessibilityLabelReporter) {
+            report.labels.insert($0)
+        }
+        .environment(\.panelAccessibilityActionReporter) { identifier, action in
+            report.actions[identifier] = action
+        }
+        let hostingView = NSHostingView(rootView: view)
+        hostingView.frame = CGRect(x: 0, y: 0, width: 370, height: 100)
+        hostingView.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        return report
     }
 
     @MainActor
@@ -881,6 +1095,13 @@ enum PanelBackgroundCheck {
 @MainActor
 private final class PanelBackgroundAsyncResultBox {
     var result: Result<Void, Error>?
+}
+
+@MainActor
+private final class PanelMenuPresentationReport {
+    var identifiers: Set<String> = []
+    var labels: Set<String> = []
+    var actions: [String: () -> Void] = [:]
 }
 
 private struct LivePanelScrollHarness: View {

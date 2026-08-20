@@ -10,6 +10,7 @@ struct ColdHotApp: App {
     @StateObject private var monitor: PerformanceMonitor
     @StateObject private var dockController: DockDelayController
     @StateObject private var panelBackgroundStore: PanelBackgroundStore
+    @StateObject private var panelBackgroundPlaybackController: PanelBackgroundPlaybackController
     @StateObject private var updateController: UpdateController
 
     init() {
@@ -18,6 +19,9 @@ struct ColdHotApp: App {
         _monitor = StateObject(wrappedValue: PerformanceMonitor(settings: settings))
         _dockController = StateObject(wrappedValue: DockDelayController())
         _panelBackgroundStore = StateObject(wrappedValue: PanelBackgroundStore())
+        _panelBackgroundPlaybackController = StateObject(
+            wrappedValue: PanelBackgroundPlaybackController()
+        )
         _updateController = StateObject(wrappedValue: UpdateController())
     }
 
@@ -28,6 +32,7 @@ struct ColdHotApp: App {
                 settings: settings,
                 dockController: dockController,
                 panelBackgroundStore: panelBackgroundStore,
+                panelBackgroundPlaybackController: panelBackgroundPlaybackController,
                 updateController: updateController
             )
         } label: {

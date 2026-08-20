@@ -14,16 +14,19 @@ struct DashboardView: View {
     @ObservedObject var settings: MonitorSettings
     @ObservedObject var dockController: DockDelayController
     @ObservedObject var panelBackgroundStore: PanelBackgroundStore
+    @ObservedObject var panelBackgroundPlaybackController: PanelBackgroundPlaybackController
     @ObservedObject var updateController: UpdateController
     @State private var requestedScroll: PanelScrollRequest?
     @State private var presentationState: PanelPresentationState<MetricKind>
     @State private var expansionTransitionID = 0
+    @State private var panelBackgroundMenuLifecycle = PanelBackgroundMenuLifecycle()
 
     init(
         monitor: PerformanceMonitor,
         settings: MonitorSettings,
         dockController: DockDelayController,
         panelBackgroundStore: PanelBackgroundStore,
+        panelBackgroundPlaybackController: PanelBackgroundPlaybackController,
         updateController: UpdateController,
         initialVisibleDetailsMetric: MetricKind? = nil
     ) {
@@ -31,6 +34,9 @@ struct DashboardView: View {
         _settings = ObservedObject(wrappedValue: settings)
         _dockController = ObservedObject(wrappedValue: dockController)
         _panelBackgroundStore = ObservedObject(wrappedValue: panelBackgroundStore)
+        _panelBackgroundPlaybackController = ObservedObject(
+            wrappedValue: panelBackgroundPlaybackController
+        )
         _updateController = ObservedObject(wrappedValue: updateController)
         _presentationState = State(
             initialValue: PanelPresentationState(
@@ -106,14 +112,23 @@ struct DashboardView: View {
                 dockQuickControl
             }
 
+            PanelBackgroundReduceMotionMessage(
+                asset: panelBackgroundStore.asset,
+                isEnabled: settings.isPanelBackgroundEnabled,
+                reduceMotion: reduceMotion
+            )
+            .padding(.horizontal, 14)
+            .padding(.vertical, panelBackgroundIntent.shouldShowReduceMotionMessage ? 8 : 0)
+
             Divider()
             footer
         }
         .frame(width: PanelLayout.width)
         .background {
             PanelBackgroundView(
-                image: panelBackgroundStore.image,
-                isEnabled: settings.isPanelBackgroundEnabled,
+                asset: panelBackgroundStore.asset,
+                controller: panelBackgroundPlaybackController,
+                intent: panelBackgroundIntent,
                 dimOpacity: settings.panelBackgroundDimOpacity,
                 zoom: settings.panelBackgroundZoom,
                 position: CGPoint(
@@ -131,7 +146,13 @@ struct DashboardView: View {
                 && panelBackgroundStore.hasImage
         )
         .clipped()
+        .onAppear {
+            panelBackgroundMenuLifecycle.didAppear()
+            synchronizePanelBackgroundPlayback()
+        }
         .onDisappear {
+            panelBackgroundMenuLifecycle.didDisappear()
+            synchronizePanelBackgroundPlayback()
             expansionTransitionID += 1
             monitor.setExpandedMetric(nil)
             requestedScroll = nil
@@ -142,6 +163,32 @@ struct DashboardView: View {
                 animateExpansion(to: nil, scrollTarget: nil)
             }
         }
+        .onChange(of: panelBackgroundStore.asset?.id) { _, _ in
+            synchronizePanelBackgroundPlayback()
+        }
+        .onChange(of: settings.isPanelBackgroundEnabled) { _, _ in
+            synchronizePanelBackgroundPlayback()
+        }
+        .onChange(of: reduceMotion) { _, _ in
+            synchronizePanelBackgroundPlayback()
+        }
+        .onChange(of: settings.isPanelBackgroundAudioEnabled) { _, _ in
+            synchronizePanelBackgroundPlayback()
+        }
+    }
+
+    private var panelBackgroundIntent: PanelBackgroundPlaybackIntent {
+        panelBackgroundMenuLifecycle.intent(
+            asset: panelBackgroundStore.asset,
+            isEnabled: settings.isPanelBackgroundEnabled,
+            reduceMotion: reduceMotion,
+            audioRequested: settings.isPanelBackgroundAudioEnabled
+        )
+    }
+
+    private func synchronizePanelBackgroundPlayback() {
+        panelBackgroundPlaybackController.configure(asset: panelBackgroundStore.asset)
+        panelBackgroundPlaybackController.update(intent: panelBackgroundIntent)
     }
 
     private var enabledMetricKinds: [MetricKind] {
@@ -301,6 +348,12 @@ struct DashboardView: View {
                 }
             }
             .buttonStyle(.plain)
+            PanelBackgroundAudioToggle(
+                asset: panelBackgroundStore.asset,
+                isAudioEnabled: settings.isPanelBackgroundAudioEnabled,
+                reduceMotion: reduceMotion,
+                setAudioEnabled: settings.setPanelBackgroundAudioEnabled
+            )
             if let version = updateController.availableVersion {
                 Divider().frame(height: 14)
                 Button(action: updateController.checkForUpdates) {
