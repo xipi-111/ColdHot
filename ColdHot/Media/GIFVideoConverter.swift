@@ -14,6 +14,19 @@ struct GIFVideoConverter {
     static let maximumPixelDimension = 1_600
     static let minimumFrameDuration = 0.02
 
+    static func frameDuration(
+        unclampedDelay: Double?,
+        clampedDelay: Double?
+    ) -> CMTime {
+        let delay = unclampedDelay ?? clampedDelay
+        let validDelay = if let delay, delay.isFinite, delay > 0 {
+            delay
+        } else {
+            minimumFrameDuration
+        }
+        return CMTime(seconds: validDelay, preferredTimescale: 600)
+    }
+
     func convert(sourceURL: URL, destinationURL: URL) async throws -> GIFVideoConversionResult {
         try Task.checkCancellation()
         try validateInputLimit(at: sourceURL)
@@ -23,13 +36,18 @@ struct GIFVideoConverter {
             throw GIFVideoConversionError.destinationAlreadyExists
         }
 
-        var completed = false
-        defer {
-            if !completed {
-                try? fileManager.removeItem(at: destinationURL)
-            }
+        return try await Self.withIncompleteOutputCleanup(at: destinationURL) {
+            try await convertValidatedGIF(
+                sourceURL: sourceURL,
+                destinationURL: destinationURL
+            )
         }
+    }
 
+    private func convertValidatedGIF(
+        sourceURL: URL,
+        destinationURL: URL
+    ) async throws -> GIFVideoConversionResult {
         guard
             let source = CGImageSourceCreateWithURL(
                 sourceURL as CFURL,
@@ -95,6 +113,7 @@ struct GIFVideoConverter {
                 adaptor: adaptor
             )
             try Task.checkCancellation()
+            writer.endSession(atSourceTime: duration)
             try await finishWriting(writer)
         } catch {
             writer.cancelWriting()
@@ -105,12 +124,27 @@ struct GIFVideoConverter {
             throw GIFVideoConversionError.writerFailed(writer.error)
         }
 
-        completed = true
         return GIFVideoConversionResult(
             frameCount: frameCount,
             duration: duration,
             displaySize: displaySize
         )
+    }
+
+    static func withIncompleteOutputCleanup<Value>(
+        at destinationURL: URL,
+        operation: () async throws -> Value
+    ) async throws -> Value {
+        var completed = false
+        defer {
+            if !completed {
+                try? FileManager.default.removeItem(at: destinationURL)
+            }
+        }
+
+        let value = try await operation()
+        completed = true
+        return value
     }
 
     private func validateInputLimit(at url: URL) throws {
@@ -153,14 +187,10 @@ struct GIFVideoConverter {
     private func frameDuration(at index: Int, in source: CGImageSource) -> CMTime {
         let properties = CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [CFString: Any]
         let gifProperties = properties?[kCGImagePropertyGIFDictionary] as? [CFString: Any]
-        let delay = numericValue(gifProperties?[kCGImagePropertyGIFUnclampedDelayTime])
-            ?? numericValue(gifProperties?[kCGImagePropertyGIFDelayTime])
-        let validDelay = if let delay, delay.isFinite, delay > 0 {
-            delay
-        } else {
-            Self.minimumFrameDuration
-        }
-        return CMTime(seconds: validDelay, preferredTimescale: 600)
+        return Self.frameDuration(
+            unclampedDelay: numericValue(gifProperties?[kCGImagePropertyGIFUnclampedDelayTime]),
+            clampedDelay: numericValue(gifProperties?[kCGImagePropertyGIFDelayTime])
+        )
     }
 
     private func numericValue(_ value: Any?) -> Double? {
@@ -188,27 +218,52 @@ struct GIFVideoConverter {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 completion.install(continuation)
-                input.requestMediaDataWhenReady(on: queue) {
-                    guard !completion.isFinished else { return }
+                completion.performIfNotFinished {
+                    input.requestMediaDataWhenReady(on: queue) {
+                        guard !completion.isFinished else { return }
 
-                    do {
-                        while inputBox.value.isReadyForMoreMediaData {
-                            guard !completion.isFinished else { return }
-                            guard writerBox.value.status == .writing else {
-                                throw GIFVideoConversionError.writerFailed(writerBox.value.error)
-                            }
+                        do {
+                            while inputBox.value.isReadyForMoreMediaData {
+                                guard !completion.isFinished else { return }
+                                guard writerBox.value.status == .writing else {
+                                    throw GIFVideoConversionError.writerFailed(writerBox.value.error)
+                                }
 
-                            if progress.frameIndex < frameCount {
-                                let image = try autoreleasepool {
-                                    guard let image = CGImageSourceCreateImageAtIndex(
-                                        sourceBox.value,
-                                        progress.frameIndex,
-                                        [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
-                                    ) else {
-                                        throw GIFVideoConversionError.unreadableFrame(progress.frameIndex)
+                                if progress.frameIndex < frameCount {
+                                    let image = try autoreleasepool {
+                                        guard let image = CGImageSourceCreateImageAtIndex(
+                                            sourceBox.value,
+                                            progress.frameIndex,
+                                            [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
+                                        ) else {
+                                            throw GIFVideoConversionError.unreadableFrame(progress.frameIndex)
+                                        }
+                                        let pixelBuffer = try makePixelBuffer(
+                                            for: image,
+                                            displaySize: displaySize,
+                                            backgroundColor: backgroundColor,
+                                            pool: adaptorBox.value.pixelBufferPool
+                                        )
+                                        guard adaptorBox.value.append(
+                                            pixelBuffer,
+                                            withPresentationTime: progress.presentationTime
+                                        ) else {
+                                            throw GIFVideoConversionError.writerFailed(writerBox.value.error)
+                                        }
+                                        return image
+                                    }
+                                    progress.lastImage = image
+                                    progress.presentationTime = CMTimeAdd(
+                                        progress.presentationTime,
+                                        delays[progress.frameIndex]
+                                    )
+                                    progress.frameIndex += 1
+                                } else if !progress.didAppendFinalFrame {
+                                    guard let lastImage = progress.lastImage else {
+                                        throw GIFVideoConversionError.unreadableGIF
                                     }
                                     let pixelBuffer = try makePixelBuffer(
-                                        for: image,
+                                        for: lastImage,
                                         displaySize: displaySize,
                                         backgroundColor: backgroundColor,
                                         pool: adaptorBox.value.pixelBufferPool
@@ -219,45 +274,22 @@ struct GIFVideoConverter {
                                     ) else {
                                         throw GIFVideoConversionError.writerFailed(writerBox.value.error)
                                     }
-                                    return image
+                                    progress.didAppendFinalFrame = true
+                                } else {
+                                    inputBox.value.markAsFinished()
+                                    completion.finish(with: .success(()))
+                                    return
                                 }
-                                progress.lastImage = image
-                                progress.presentationTime = CMTimeAdd(
-                                    progress.presentationTime,
-                                    delays[progress.frameIndex]
-                                )
-                                progress.frameIndex += 1
-                            } else if !progress.didAppendFinalFrame {
-                                guard let lastImage = progress.lastImage else {
-                                    throw GIFVideoConversionError.unreadableGIF
-                                }
-                                let pixelBuffer = try makePixelBuffer(
-                                    for: lastImage,
-                                    displaySize: displaySize,
-                                    backgroundColor: backgroundColor,
-                                    pool: adaptorBox.value.pixelBufferPool
-                                )
-                                guard adaptorBox.value.append(
-                                    pixelBuffer,
-                                    withPresentationTime: progress.presentationTime
-                                ) else {
-                                    throw GIFVideoConversionError.writerFailed(writerBox.value.error)
-                                }
-                                progress.didAppendFinalFrame = true
-                            } else {
-                                inputBox.value.markAsFinished()
-                                completion.finish(with: .success(()))
-                                return
                             }
+                        } catch {
+                            completion.finish(with: .failure(error))
                         }
-                    } catch {
-                        completion.finish(with: .failure(error))
                     }
                 }
             }
         } onCancel: {
-            writerBox.value.cancelWriting()
             completion.finish(with: .failure(CancellationError()))
+            writerBox.value.cancelWriting()
         }
     }
 
@@ -311,19 +343,21 @@ struct GIFVideoConverter {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 completion.install(continuation)
-                writer.finishWriting {
-                    guard writerBox.value.status == .completed else {
-                        completion.finish(
-                            with: .failure(GIFVideoConversionError.writerFailed(writerBox.value.error))
-                        )
-                        return
+                completion.performIfNotFinished {
+                    writer.finishWriting {
+                        guard writerBox.value.status == .completed else {
+                            completion.finish(
+                                with: .failure(GIFVideoConversionError.writerFailed(writerBox.value.error))
+                            )
+                            return
+                        }
+                        completion.finish(with: .success(()))
                     }
-                    completion.finish(with: .success(()))
                 }
             }
         } onCancel: {
-            writerBox.value.cancelWriting()
             completion.finish(with: .failure(CancellationError()))
+            writerBox.value.cancelWriting()
         }
     }
 
@@ -407,6 +441,16 @@ private final class OneShotContinuation: @unchecked Sendable {
         self.continuation = nil
         lock.unlock()
         continuation?.resume(with: result)
+    }
+
+    func performIfNotFinished(_ operation: () -> Void) {
+        lock.lock()
+        guard result == nil else {
+            lock.unlock()
+            return
+        }
+        operation()
+        lock.unlock()
     }
 }
 
