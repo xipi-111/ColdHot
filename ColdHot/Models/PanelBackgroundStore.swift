@@ -3,6 +3,13 @@ import Combine
 import Foundation
 import ImageIO
 
+typealias PanelBackgroundPrepareImport = (
+    _ sourceURL: URL,
+    _ stagingDirectory: URL
+) async throws -> PanelBackgroundPreparedImport
+
+typealias PanelBackgroundWriteManifest = (_ data: Data, _ manifestURL: URL) throws -> Void
+
 @MainActor
 final class PanelBackgroundStore: ObservableObject {
     static let maximumPixelDimension = 1_600
@@ -18,11 +25,15 @@ final class PanelBackgroundStore: ObservableObject {
     private let directoryURL: URL
     private let manifestURL: URL
     private let fileManager: FileManager
-    private let importer: PanelBackgroundMediaImporter
+    private let prepareImport: PanelBackgroundPrepareImport
+    private let writeManifestOperation: PanelBackgroundWriteManifest
+    private var mutationInProgress = false
 
     init(
         directoryURL: URL? = nil,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        prepareImport: PanelBackgroundPrepareImport? = nil,
+        writeManifest: PanelBackgroundWriteManifest? = nil
     ) {
         self.fileManager = fileManager
         let resolvedDirectory = directoryURL
@@ -30,17 +41,31 @@ final class PanelBackgroundStore: ObservableObject {
         self.directoryURL = resolvedDirectory
         fileURL = resolvedDirectory.appendingPathComponent("background.png")
         manifestURL = resolvedDirectory.appendingPathComponent("manifest.json")
-        importer = PanelBackgroundMediaImporter(fileManager: fileManager)
+
+        let importer = PanelBackgroundMediaImporter(fileManager: fileManager)
+        self.prepareImport = prepareImport ?? { sourceURL, stagingDirectory in
+            try await importer.prepareImport(from: sourceURL, in: stagingDirectory)
+        }
+        writeManifestOperation = writeManifest ?? { data, url in
+            try data.write(to: url, options: .atomic)
+        }
 
         Self.cleanStagingDirectories(in: resolvedDirectory, fileManager: fileManager)
         asset = Self.loadManifestAsset(
             from: manifestURL,
             directoryURL: resolvedDirectory,
             fileManager: fileManager
-        ) ?? Self.loadLegacyAsset(at: fileURL)
+        ) ?? Self.loadLegacyAsset(
+            at: fileURL,
+            directoryURL: resolvedDirectory,
+            fileManager: fileManager
+        )
     }
 
     func importBackground(from sourceURL: URL) async throws {
+        try beginMutation()
+        defer { mutationInProgress = false }
+
         let isAccessingSecurityScopedResource = sourceURL.startAccessingSecurityScopedResource()
         defer {
             if isAccessingSecurityScopedResource {
@@ -48,139 +73,163 @@ final class PanelBackgroundStore: ObservableObject {
             }
         }
 
-        do {
-            try fileManager.createDirectory(
-                at: directoryURL,
-                withIntermediateDirectories: true
-            )
-        } catch {
-            throw PanelBackgroundImportError.unableToWrite
-        }
-
+        try createStoreDirectory()
         let generationID = UUID().uuidString
         let stagingDirectory = directoryURL.appendingPathComponent(
             "staging-\(generationID)",
             isDirectory: true
         )
+        let previousAsset = asset
         let previousManifestData = try? Data(contentsOf: manifestURL)
-        let previousManifest = previousManifestData.flatMap {
-            try? JSONDecoder().decode(PanelBackgroundManifest.self, from: $0)
-        }
-        var publishedURLs: [URL] = []
-        var manifestWasWritten = false
-        var committed = false
+        let previousManifest = previousManifestData.flatMap(Self.decodeManifest)
+        var finalURLs: [URL] = []
+        var published = false
 
-        defer {
-            try? fileManager.removeItem(at: stagingDirectory)
-            if !committed {
-                for url in publishedURLs {
-                    try? fileManager.removeItem(at: url)
-                }
-                if manifestWasWritten {
-                    restoreManifest(previousManifestData)
-                }
-            }
-        }
-
-        let prepared = try await importer.prepareImport(
-            from: sourceURL,
-            in: stagingDirectory
-        )
-        try Task.checkCancellation()
-
-        let mediaFilename = Self.generationFilename(
-            prefix: "media",
-            generationID: generationID,
-            pathExtension: prepared.mediaURL.pathExtension
-        )
-        let mediaURL = directoryURL.appendingPathComponent(mediaFilename)
         do {
-            try fileManager.moveItem(at: prepared.mediaURL, to: mediaURL)
-            publishedURLs.append(mediaURL)
-        } catch {
-            throw PanelBackgroundImportError.unableToWrite
-        }
+            let prepared = try await prepareImport(sourceURL, stagingDirectory)
+            try Task.checkCancellation()
 
-        var posterFilename: String?
-        if let preparedPosterURL = prepared.posterURL {
-            let filename = Self.generationFilename(
-                prefix: "poster",
+            let mediaFilename = Self.generationFilename(
+                prefix: "media",
                 generationID: generationID,
-                pathExtension: "png"
+                pathExtension: prepared.mediaURL.pathExtension
             )
-            let posterURL = directoryURL.appendingPathComponent(filename)
+            let mediaURL = directoryURL.appendingPathComponent(mediaFilename)
             do {
-                try fileManager.moveItem(at: preparedPosterURL, to: posterURL)
-                publishedURLs.append(posterURL)
-                posterFilename = filename
+                try fileManager.moveItem(at: prepared.mediaURL, to: mediaURL)
+                finalURLs.append(mediaURL)
+            } catch is CancellationError {
+                throw CancellationError()
             } catch {
                 throw PanelBackgroundImportError.unableToWrite
             }
-        }
 
-        let manifest = PanelBackgroundManifest(
-            schemaVersion: PanelBackgroundManifest.currentSchemaVersion,
-            generationID: generationID,
-            kind: prepared.kind,
-            mediaFilename: mediaFilename,
-            posterFilename: posterFilename,
-            originalTypeIdentifier: prepared.originalTypeIdentifier,
-            hasAudio: prepared.hasAudio
-        )
-        do {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.sortedKeys]
-            let data = try encoder.encode(manifest)
-            manifestWasWritten = true
-            try data.write(to: manifestURL, options: .atomic)
+            var posterFilename: String?
+            if let preparedPosterURL = prepared.posterURL {
+                let filename = Self.generationFilename(
+                    prefix: "poster",
+                    generationID: generationID,
+                    pathExtension: "png"
+                )
+                let posterURL = directoryURL.appendingPathComponent(filename)
+                do {
+                    try fileManager.moveItem(at: preparedPosterURL, to: posterURL)
+                    finalURLs.append(posterURL)
+                    posterFilename = filename
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    throw PanelBackgroundImportError.unableToWrite
+                }
+            }
+
+            let manifest = PanelBackgroundManifest(
+                schemaVersion: PanelBackgroundManifest.currentSchemaVersion,
+                generationID: generationID,
+                kind: prepared.kind,
+                mediaFilename: mediaFilename,
+                posterFilename: posterFilename,
+                originalTypeIdentifier: prepared.originalTypeIdentifier,
+                hasAudio: prepared.hasAudio
+            )
+            guard Self.loadAsset(
+                from: manifest,
+                directoryURL: directoryURL,
+                fileManager: fileManager
+            ) != nil else {
+                throw PanelBackgroundImportError.unableToWrite
+            }
+
+            let data = try Self.encodeManifest(manifest)
+            do {
+                try writeManifestOperation(data, manifestURL)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                throw PanelBackgroundImportError.unableToWrite
+            }
+
+            guard let committedAsset = Self.loadManifestAsset(
+                from: manifestURL,
+                directoryURL: directoryURL,
+                fileManager: fileManager
+            ), committedAsset.id == generationID else {
+                throw PanelBackgroundImportError.unableToWrite
+            }
+
+            asset = committedAsset
+            published = true
+            var cleanupFailed = false
+            cleanupFailed = removeFilesReferenced(
+                by: previousManifest,
+                excluding: manifest
+            ) || cleanupFailed
+            cleanupFailed = removeIfPresent(fileURL) || cleanupFailed
+            cleanupFailed = removeIfPresent(stagingDirectory) || cleanupFailed
+            if cleanupFailed {
+                throw PanelBackgroundImportError.cleanupFailed
+            }
         } catch {
-            throw PanelBackgroundImportError.unableToWrite
-        }
-
-        guard let committedAsset = Self.loadManifestAsset(
-            from: manifestURL,
-            directoryURL: directoryURL,
-            fileManager: fileManager
-        ), committedAsset.id == generationID else {
-            throw PanelBackgroundImportError.unableToWrite
-        }
-
-        asset = committedAsset
-        committed = true
-        removeFilesReferenced(by: previousManifest, excluding: manifest)
-        if fileManager.fileExists(atPath: fileURL.path) {
-            try? fileManager.removeItem(at: fileURL)
+            if published {
+                let stageCleanupFailed = removeIfPresent(stagingDirectory)
+                let errorIsCleanupFailure: Bool
+                if case PanelBackgroundImportError.cleanupFailed = error {
+                    errorIsCleanupFailure = true
+                } else {
+                    errorIsCleanupFailure = false
+                }
+                if stageCleanupFailed, !errorIsCleanupFailure {
+                    throw PanelBackgroundImportError.cleanupFailed
+                }
+                throw error
+            }
+            try recoverFailedImport(
+                originalError: error,
+                previousAsset: previousAsset,
+                previousManifestData: previousManifestData,
+                finalURLs: finalURLs,
+                stagingDirectory: stagingDirectory
+            )
         }
     }
 
     func removeBackground() throws {
-        let manifest = Self.loadManifest(
-            from: manifestURL,
-            fileManager: fileManager
-        )
-        var firstError: Error?
+        try beginMutation()
+        defer { mutationInProgress = false }
 
-        for url in Self.urlsReferenced(
-            by: manifest,
-            directoryURL: directoryURL
-        ) + [manifestURL, fileURL] {
-            guard fileManager.fileExists(atPath: url.path) else { continue }
-            do {
-                try fileManager.removeItem(at: url)
-            } catch {
-                firstError = firstError ?? error
+        let manifest = Self.loadManifest(from: manifestURL, fileManager: fileManager)
+        if manifest != nil {
+            if removeIfPresent(fileURL) {
+                throw PanelBackgroundImportError.unableToWrite
             }
+            do {
+                try fileManager.removeItem(at: manifestURL)
+            } catch {
+                throw PanelBackgroundImportError.unableToWrite
+            }
+            asset = nil
+            var cleanupFailed = removeFilesReferenced(by: manifest, excluding: nil)
+            cleanupFailed = removeStagingDirectories() || cleanupFailed
+            if cleanupFailed {
+                throw PanelBackgroundImportError.cleanupFailed
+            }
+            return
         }
-        Self.cleanStagingDirectories(in: directoryURL, fileManager: fileManager)
 
-        if let firstError {
-            throw firstError
+        if removeIfPresent(fileURL) {
+            throw PanelBackgroundImportError.unableToWrite
         }
         asset = nil
+        if removeStagingDirectories() {
+            throw PanelBackgroundImportError.cleanupFailed
+        }
     }
 
     // Temporary synchronous compatibility for Settings until its async picker migration.
     func importImage(from sourceURL: URL) throws {
+        try beginMutation()
+        defer { mutationInProgress = false }
+
         let isAccessingSecurityScopedResource = sourceURL.startAccessingSecurityScopedResource()
         defer {
             if isAccessingSecurityScopedResource {
@@ -188,19 +237,11 @@ final class PanelBackgroundStore: ObservableObject {
             }
         }
 
-        do {
-            try fileManager.createDirectory(
-                at: directoryURL,
-                withIntermediateDirectories: true
-            )
-        } catch {
-            throw PanelBackgroundImportError.unableToWrite
-        }
+        try createStoreDirectory()
         let stagingDirectory = directoryURL.appendingPathComponent(
             "staging-compatibility-\(UUID().uuidString)",
             isDirectory: true
         )
-        defer { try? fileManager.removeItem(at: stagingDirectory) }
         do {
             try fileManager.createDirectory(
                 at: stagingDirectory,
@@ -210,29 +251,51 @@ final class PanelBackgroundStore: ObservableObject {
             throw PanelBackgroundImportError.unableToWrite
         }
 
+        let previousAsset = asset
+        let previousManifest = Self.loadManifest(from: manifestURL, fileManager: fileManager)
+        let previousLegacyData = try? Data(contentsOf: fileURL)
         let preparedURL = stagingDirectory.appendingPathComponent("background.png")
-        try PanelBackgroundMediaImporter.writeStaticThumbnail(
-            from: sourceURL,
-            to: preparedURL
-        )
-        guard let preparedImage = Self.loadImage(at: preparedURL) else {
-            throw PanelBackgroundImportError.unreadableMedia
-        }
         do {
+            try PanelBackgroundMediaImporter.writeStaticThumbnail(
+                from: sourceURL,
+                to: preparedURL
+            )
             let data = try Data(contentsOf: preparedURL)
             try data.write(to: fileURL, options: .atomic)
+        } catch let error as PanelBackgroundImportError {
+            _ = removeIfPresent(stagingDirectory)
+            throw error
         } catch {
+            _ = removeIfPresent(stagingDirectory)
             throw PanelBackgroundImportError.unableToWrite
         }
 
-        let previousManifest = Self.loadManifest(
-            from: manifestURL,
+        guard Self.isActualRegularFile(
+            fileURL,
+            inside: directoryURL,
             fileManager: fileManager
-        )
-        if fileManager.fileExists(atPath: manifestURL.path) {
-            try fileManager.removeItem(at: manifestURL)
+        ), let preparedImage = Self.loadImage(at: fileURL) else {
+            let rollbackFailed = restoreLegacy(previousLegacyData)
+                || removeIfPresent(stagingDirectory)
+            asset = previousAsset
+            throw rollbackFailed
+                ? PanelBackgroundImportError.rollbackFailed
+                : PanelBackgroundImportError.unableToWrite
         }
-        removeFilesReferenced(by: previousManifest, excluding: nil)
+
+        if previousManifest != nil {
+            do {
+                try fileManager.removeItem(at: manifestURL)
+            } catch {
+                let rollbackFailed = restoreLegacy(previousLegacyData)
+                    || removeIfPresent(stagingDirectory)
+                asset = previousAsset
+                throw rollbackFailed
+                    ? PanelBackgroundImportError.rollbackFailed
+                    : PanelBackgroundImportError.unableToWrite
+            }
+        }
+
         asset = PanelBackgroundAsset(
             id: Self.legacyAssetID,
             kind: .staticImage,
@@ -240,6 +303,11 @@ final class PanelBackgroundStore: ObservableObject {
             mediaURL: nil,
             hasAudio: false
         )
+        var cleanupFailed = removeFilesReferenced(by: previousManifest, excluding: nil)
+        cleanupFailed = removeIfPresent(stagingDirectory) || cleanupFailed
+        if cleanupFailed {
+            throw PanelBackgroundImportError.cleanupFailed
+        }
     }
 
     // Temporary synchronous compatibility for Settings until Task 6.
@@ -247,25 +315,165 @@ final class PanelBackgroundStore: ObservableObject {
         try removeBackground()
     }
 
-    private func restoreManifest(_ previousData: Data?) {
-        if let previousData {
-            try? previousData.write(to: manifestURL, options: .atomic)
-        } else if fileManager.fileExists(atPath: manifestURL.path) {
-            try? fileManager.removeItem(at: manifestURL)
+    private func beginMutation() throws {
+        guard !mutationInProgress else {
+            throw PanelBackgroundImportError.operationInProgress
         }
+        mutationInProgress = true
+    }
+
+    private func createStoreDirectory() throws {
+        do {
+            try fileManager.createDirectory(
+                at: directoryURL,
+                withIntermediateDirectories: true
+            )
+        } catch {
+            throw PanelBackgroundImportError.unableToWrite
+        }
+    }
+
+    private func recoverFailedImport(
+        originalError: Error,
+        previousAsset: PanelBackgroundAsset?,
+        previousManifestData: Data?,
+        finalURLs: [URL],
+        stagingDirectory: URL
+    ) throws -> Never {
+        let manifestExists = fileManager.fileExists(atPath: manifestURL.path)
+        let diskManifestData = try? Data(contentsOf: manifestURL)
+        let manifestMayHaveChanged = diskManifestData != previousManifestData
+            || (manifestExists && diskManifestData == nil)
+
+        if manifestMayHaveChanged {
+            do {
+                try restoreManifest(previousManifestData)
+            } catch {
+                if let coherentAsset = Self.loadManifestAsset(
+                    from: manifestURL,
+                    directoryURL: directoryURL,
+                    fileManager: fileManager
+                ) {
+                    asset = coherentAsset
+                } else {
+                    asset = previousAsset
+                }
+                _ = removeIfPresent(stagingDirectory)
+                throw PanelBackgroundImportError.rollbackFailed
+            }
+        }
+
+        asset = Self.loadManifestAsset(
+            from: manifestURL,
+            directoryURL: directoryURL,
+            fileManager: fileManager
+        ) ?? Self.loadLegacyAsset(
+            at: fileURL,
+            directoryURL: directoryURL,
+            fileManager: fileManager
+        ) ?? previousAsset
+
+        let cleanupFailed = removeUnreferenced(finalURLs)
+            || removeIfPresent(stagingDirectory)
+        if cleanupFailed {
+            throw PanelBackgroundImportError.rollbackFailed
+        }
+
+        throw originalError
+    }
+
+    private func restoreManifest(_ previousData: Data?) throws {
+        if let previousData {
+            try writeManifestOperation(previousData, manifestURL)
+        } else if fileManager.fileExists(atPath: manifestURL.path) {
+            try fileManager.removeItem(at: manifestURL)
+        }
+    }
+
+    private func restoreLegacy(_ previousData: Data?) -> Bool {
+        do {
+            if let previousData {
+                try previousData.write(to: fileURL, options: .atomic)
+            } else if fileManager.fileExists(atPath: fileURL.path) {
+                try fileManager.removeItem(at: fileURL)
+            }
+            return false
+        } catch {
+            return true
+        }
+    }
+
+    private func removeUnreferenced(_ urls: [URL]) -> Bool {
+        let currentManifestData = try? Data(contentsOf: manifestURL)
+        let currentManifest = currentManifestData.flatMap(Self.decodeManifest)
+        if currentManifestData != nil, currentManifest == nil {
+            return true
+        }
+        let retainedPaths = Set(
+            Self.referenceURLsForCleanup(
+                currentManifest,
+                directoryURL: directoryURL,
+                fileManager: fileManager
+            ).map(\.path)
+        )
+        var failed = false
+        for url in Set(urls.map(\.path)).map({ URL(fileURLWithPath: $0) })
+        where !retainedPaths.contains(url.path) {
+            failed = removeIfPresent(url) || failed
+        }
+        return failed
     }
 
     private func removeFilesReferenced(
         by oldManifest: PanelBackgroundManifest?,
         excluding newManifest: PanelBackgroundManifest?
-    ) {
+    ) -> Bool {
         let retainedPaths = Set(
-            Self.urlsReferenced(by: newManifest, directoryURL: directoryURL).map(\.path)
+            Self.referenceURLsForCleanup(
+                newManifest,
+                directoryURL: directoryURL,
+                fileManager: fileManager
+            ).map(\.path)
         )
-        for url in Self.urlsReferenced(by: oldManifest, directoryURL: directoryURL)
-        where !retainedPaths.contains(url.path) && fileManager.fileExists(atPath: url.path) {
-            try? fileManager.removeItem(at: url)
+        var failed = false
+        for url in Self.referenceURLsForCleanup(
+            oldManifest,
+            directoryURL: directoryURL,
+            fileManager: fileManager
+        ) where !retainedPaths.contains(url.path) {
+            failed = removeIfPresent(url) || failed
         }
+        return failed
+    }
+
+    private func removeIfPresent(_ url: URL) -> Bool {
+        guard fileManager.fileExists(atPath: url.path) else { return false }
+        do {
+            try fileManager.removeItem(at: url)
+            return false
+        } catch {
+            return true
+        }
+    }
+
+    private func removeStagingDirectories() -> Bool {
+        guard let contents = try? fileManager.contentsOfDirectory(
+            at: directoryURL,
+            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return false
+        }
+        var failed = false
+        for url in contents where url.lastPathComponent.hasPrefix("staging-") {
+            let values = try? url.resourceValues(
+                forKeys: [.isDirectoryKey, .isSymbolicLinkKey]
+            )
+            if values?.isDirectory == true, values?.isSymbolicLink != true {
+                failed = removeIfPresent(url) || failed
+            }
+        }
+        return failed
     }
 
     private static func defaultDirectoryURL(fileManager: FileManager) -> URL {
@@ -288,34 +496,69 @@ final class PanelBackgroundStore: ObservableObject {
         return "\(prefix)-\(generationID)\(suffix)"
     }
 
+    private static func encodeManifest(_ manifest: PanelBackgroundManifest) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try encoder.encode(manifest)
+    }
+
+    private static func decodeManifest(_ data: Data) -> PanelBackgroundManifest? {
+        try? JSONDecoder().decode(PanelBackgroundManifest.self, from: data)
+    }
+
     private static func loadManifestAsset(
         from manifestURL: URL,
         directoryURL: URL,
         fileManager: FileManager
     ) -> PanelBackgroundAsset? {
-        guard let manifest = loadManifest(from: manifestURL, fileManager: fileManager),
-              manifest.schemaVersion == PanelBackgroundManifest.currentSchemaVersion,
-              isSafeFilename(manifest.mediaFilename) else {
+        guard let manifest = loadManifest(from: manifestURL, fileManager: fileManager) else {
+            return nil
+        }
+        return loadAsset(
+            from: manifest,
+            directoryURL: directoryURL,
+            fileManager: fileManager
+        )
+    }
+
+    private static func loadAsset(
+        from manifest: PanelBackgroundManifest,
+        directoryURL: URL,
+        fileManager: FileManager
+    ) -> PanelBackgroundAsset? {
+        guard manifest.schemaVersion == PanelBackgroundManifest.currentSchemaVersion,
+              isSafeFilename(manifest.mediaFilename),
+              manifest.posterFilename.map(isSafeFilename) ?? true else {
             return nil
         }
 
         let mediaURL = directoryURL.appendingPathComponent(manifest.mediaFilename)
-        guard fileManager.fileExists(atPath: mediaURL.path) else { return nil }
+        guard isActualRegularFile(
+            mediaURL,
+            inside: directoryURL,
+            fileManager: fileManager
+        ) else {
+            return nil
+        }
+        let posterURL = manifest.posterFilename.map(directoryURL.appendingPathComponent)
+        if let posterURL,
+           !isActualRegularFile(
+                posterURL,
+                inside: directoryURL,
+                fileManager: fileManager
+           ) {
+            return nil
+        }
+
         let imageURL: URL
         switch manifest.kind {
         case .staticImage:
             imageURL = mediaURL
         case .convertedGIF, .video:
-            guard let posterFilename = manifest.posterFilename,
-                  isSafeFilename(posterFilename) else {
-                return nil
-            }
-            imageURL = directoryURL.appendingPathComponent(posterFilename)
+            guard let posterURL else { return nil }
+            imageURL = posterURL
         }
-        guard fileManager.fileExists(atPath: imageURL.path),
-              let posterImage = loadImage(at: imageURL) else {
-            return nil
-        }
+        guard let posterImage = loadImage(at: imageURL) else { return nil }
         return PanelBackgroundAsset(
             id: manifest.generationID,
             kind: manifest.kind,
@@ -333,29 +576,73 @@ final class PanelBackgroundStore: ObservableObject {
               let data = try? Data(contentsOf: url) else {
             return nil
         }
-        return try? JSONDecoder().decode(PanelBackgroundManifest.self, from: data)
+        return decodeManifest(data)
     }
 
-    private static func urlsReferenced(
-        by manifest: PanelBackgroundManifest?,
-        directoryURL: URL
+    private static func referenceURLsForCleanup(
+        _ manifest: PanelBackgroundManifest?,
+        directoryURL: URL,
+        fileManager: FileManager
     ) -> [URL] {
         guard let manifest else { return [] }
         return [manifest.mediaFilename, manifest.posterFilename]
             .compactMap { $0 }
             .filter(isSafeFilename)
             .map { directoryURL.appendingPathComponent($0) }
+            .filter {
+                isCanonicalDescendant($0, of: directoryURL)
+                    && ((try? $0.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink
+                        != true)
+            }
     }
 
     private static func isSafeFilename(_ filename: String) -> Bool {
-        !filename.isEmpty
-            && filename == URL(fileURLWithPath: filename).lastPathComponent
-            && filename != "."
-            && filename != ".."
+        guard !filename.isEmpty,
+              !(filename as NSString).isAbsolutePath,
+              filename != ".",
+              filename != "..",
+              !filename.contains("/"),
+              !filename.contains("\\") else {
+            return false
+        }
+        return filename == URL(fileURLWithPath: filename).lastPathComponent
     }
 
-    private static func loadLegacyAsset(at url: URL) -> PanelBackgroundAsset? {
-        guard let image = loadImage(at: url) else { return nil }
+    private static func isActualRegularFile(
+        _ url: URL,
+        inside directoryURL: URL,
+        fileManager: FileManager
+    ) -> Bool {
+        guard fileManager.fileExists(atPath: url.path),
+              isCanonicalDescendant(url, of: directoryURL),
+              let values = try? url.resourceValues(
+                forKeys: [.isRegularFileKey, .isSymbolicLinkKey]
+              ),
+              values.isRegularFile == true,
+              values.isSymbolicLink != true else {
+            return false
+        }
+        return true
+    }
+
+    private static func isCanonicalDescendant(_ url: URL, of directoryURL: URL) -> Bool {
+        let rootPath = directoryURL.resolvingSymlinksInPath().standardizedFileURL.path
+        let candidatePath = url.resolvingSymlinksInPath().standardizedFileURL.path
+        return candidatePath.hasPrefix(rootPath + "/")
+    }
+
+    private static func loadLegacyAsset(
+        at url: URL,
+        directoryURL: URL,
+        fileManager: FileManager
+    ) -> PanelBackgroundAsset? {
+        guard isActualRegularFile(
+            url,
+            inside: directoryURL,
+            fileManager: fileManager
+        ), let image = loadImage(at: url) else {
+            return nil
+        }
         return PanelBackgroundAsset(
             id: legacyAssetID,
             kind: .staticImage,
@@ -386,14 +673,16 @@ final class PanelBackgroundStore: ObservableObject {
     ) {
         guard let contents = try? fileManager.contentsOfDirectory(
             at: directoryURL,
-            includingPropertiesForKeys: [.isDirectoryKey],
+            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
             options: [.skipsHiddenFiles]
         ) else {
             return
         }
         for url in contents where url.lastPathComponent.hasPrefix("staging-") {
-            let isDirectory = try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory
-            if isDirectory == true {
+            let values = try? url.resourceValues(
+                forKeys: [.isDirectoryKey, .isSymbolicLinkKey]
+            )
+            if values?.isDirectory == true, values?.isSymbolicLink != true {
                 try? fileManager.removeItem(at: url)
             }
         }

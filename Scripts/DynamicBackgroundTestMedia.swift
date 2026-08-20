@@ -184,23 +184,49 @@ enum DynamicBackgroundTestMedia {
         try audioTrack.insertTimeRange(timeRange, of: sourceAudioTrack, at: .zero)
         videoTrack.preferredTransform = try await sourceVideoTrack.load(.preferredTransform)
 
-        guard let exporter = AVAssetExportSession(
-            asset: composition,
-            presetName: AVAssetExportPresetPassthrough
+        try await exportMOV(composition, to: url)
+    }
+
+    static func makePreferredTransformVideo(
+        at url: URL,
+        workingDirectory: URL
+    ) async throws {
+        let fileManager = FileManager.default
+        try fileManager.createDirectory(
+            at: workingDirectory,
+            withIntermediateDirectories: true
+        )
+        let sourceURL = workingDirectory.appendingPathComponent("landscape.mp4")
+        try await makeSilentH264Video(at: sourceURL)
+
+        let sourceAsset = AVURLAsset(url: sourceURL)
+        guard let sourceTrack = try await sourceAsset.loadTracks(
+            withMediaType: .video
+        ).first else {
+            throw TestMediaError.unableToBuildComposition
+        }
+        let duration = try await sourceAsset.load(.duration)
+        let composition = AVMutableComposition()
+        guard let track = composition.addMutableTrack(
+            withMediaType: .video,
+            preferredTrackID: kCMPersistentTrackID_Invalid
         ) else {
-            throw TestMediaError.unableToCreateExporter
+            throw TestMediaError.unableToBuildComposition
         }
-        exporter.shouldOptimizeForNetworkUse = false
-        if #available(macOS 15.0, *) {
-            try await exporter.export(to: url, as: .mov)
-        } else {
-            exporter.outputURL = url
-            exporter.outputFileType = .mov
-            await exporter.export()
-            guard exporter.status == .completed else {
-                throw TestMediaError.exportFailed(exporter.error?.localizedDescription)
-            }
-        }
+        try track.insertTimeRange(
+            CMTimeRange(start: .zero, duration: duration),
+            of: sourceTrack,
+            at: .zero
+        )
+        track.preferredTransform = CGAffineTransform(
+            a: 0,
+            b: 1,
+            c: -1,
+            d: 0,
+            tx: 24,
+            ty: 0
+        )
+        try await exportMOV(composition, to: url)
     }
 
     private static func makeTwoFrameGIF(at url: URL, width: Int, height: Int) throws {
@@ -335,6 +361,26 @@ enum DynamicBackgroundTestMedia {
             interleaved: false
         )
         try audioFile.write(from: buffer)
+    }
+
+    private static func exportMOV(_ asset: AVAsset, to url: URL) async throws {
+        guard let exporter = AVAssetExportSession(
+            asset: asset,
+            presetName: AVAssetExportPresetPassthrough
+        ) else {
+            throw TestMediaError.unableToCreateExporter
+        }
+        exporter.shouldOptimizeForNetworkUse = false
+        if #available(macOS 15.0, *) {
+            try await exporter.export(to: url, as: .mov)
+        } else {
+            exporter.outputURL = url
+            exporter.outputFileType = .mov
+            await exporter.export()
+            guard exporter.status == .completed else {
+                throw TestMediaError.exportFailed(exporter.error?.localizedDescription)
+            }
+        }
     }
 
     private static func writeTransparentGIF(

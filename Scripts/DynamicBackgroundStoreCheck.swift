@@ -21,6 +21,13 @@ enum DynamicBackgroundStoreCheck {
         try checkLegacyFallback(in: rootDirectory)
         try checkSynchronousCompatibility(in: rootDirectory)
         try await checkTransactionalImports(in: rootDirectory)
+        try await checkMutationIsolationAndCancellation(in: rootDirectory)
+        try checkCancellationErrorMapping()
+        try await checkSymlinkMaterializationAndTransformedPoster(in: rootDirectory)
+        try await checkTypeResolutionAndUnknownExtensionLimit(in: rootDirectory)
+        try await checkInjectedTransactionFailures(in: rootDirectory)
+        try await checkSynchronousTransactionFailures(in: rootDirectory)
+        try await checkStartupManifestHardening(in: rootDirectory)
         print("Dynamic background store checks passed")
     }
 
@@ -282,6 +289,594 @@ enum DynamicBackgroundStoreCheck {
         try expect(try stagingEntries(in: directory).isEmpty, "Over-limit imports must leave no staging files")
     }
 
+    @MainActor
+    private static func checkMutationIsolationAndCancellation(in rootDirectory: URL) async throws {
+        let directory = rootDirectory.appendingPathComponent("mutation-isolation", isDirectory: true)
+        let sourceURL = rootDirectory.appendingPathComponent("mutation-source.png")
+        try DynamicBackgroundTestMedia.makePNG(at: sourceURL)
+        let gate = ImportPreparationGate()
+        let realImporter = PanelBackgroundMediaImporter()
+        let store = PanelBackgroundStore(
+            directoryURL: directory,
+            prepareImport: { sourceURL, stagingDirectory in
+                await gate.pause()
+                try Task.checkCancellation()
+                return try await realImporter.prepareImport(
+                    from: sourceURL,
+                    in: stagingDirectory
+                )
+            }
+        )
+
+        let firstImport = Task { @MainActor in
+            try await store.importBackground(from: sourceURL)
+        }
+        await gate.waitUntilPaused()
+        do {
+            try await store.importBackground(from: sourceURL)
+            fatalError("A second async import must be rejected while mutation is active")
+        } catch PanelBackgroundImportError.operationInProgress {}
+        do {
+            try store.importImage(from: sourceURL)
+            fatalError("The synchronous compatibility API must reject an active async import")
+        } catch PanelBackgroundImportError.operationInProgress {}
+        await gate.resume()
+        try await firstImport.value
+
+        let committed = try loadManifest(in: directory)
+        expect(store.asset?.id == committed.generationID, "The first import must remain authoritative")
+        try expectManifestReferencesExistingFiles(committed, in: directory)
+        try expect(try stagingEntries(in: directory).isEmpty, "Concurrent rejection must leave no staging files")
+        try expect(
+            try generationEntries(in: directory).count == 1,
+            "Concurrent rejection must publish exactly one static generation"
+        )
+
+        let cancellationDirectory = rootDirectory.appendingPathComponent(
+            "mutation-cancellation",
+            isDirectory: true
+        )
+        let cancellationGate = ImportPreparationGate()
+        let cancellationStore = PanelBackgroundStore(
+            directoryURL: cancellationDirectory,
+            prepareImport: { sourceURL, stagingDirectory in
+                await cancellationGate.pause()
+                try Task.checkCancellation()
+                return try await realImporter.prepareImport(
+                    from: sourceURL,
+                    in: stagingDirectory
+                )
+            }
+        )
+        let cancelledImport = Task { @MainActor in
+            try await cancellationStore.importBackground(from: sourceURL)
+        }
+        await cancellationGate.waitUntilPaused()
+        cancelledImport.cancel()
+        await cancellationGate.resume()
+        do {
+            try await cancelledImport.value
+            fatalError("Cancelled store import must throw CancellationError")
+        } catch is CancellationError {}
+        expect(!cancellationStore.hasBackground, "Cancellation must preserve the prior empty asset")
+        expect(
+            !FileManager.default.fileExists(
+                atPath: cancellationDirectory.appendingPathComponent("manifest.json").path
+            ),
+            "Cancellation must not publish a manifest"
+        )
+        try expect(
+            try stagingEntries(in: cancellationDirectory).isEmpty,
+            "Cancellation must roll back staging files"
+        )
+        try cancellationStore.importImage(from: sourceURL)
+        expect(cancellationStore.hasImage, "Cancellation must release the mutation guard")
+    }
+
+    private static func checkCancellationErrorMapping() throws {
+        do {
+            try PanelBackgroundMediaImporter.rethrowVideoLoadError(CancellationError())
+        } catch is CancellationError {
+            return
+        } catch {
+            fatalError("AVFoundation cancellation must remain CancellationError")
+        }
+        fatalError("AVFoundation cancellation must remain CancellationError")
+    }
+
+    @MainActor
+    private static func checkSymlinkMaterializationAndTransformedPoster(
+        in rootDirectory: URL
+    ) async throws {
+        let fileManager = FileManager.default
+        let directory = rootDirectory.appendingPathComponent("symlink-input", isDirectory: true)
+        let realVideoURL = rootDirectory.appendingPathComponent("symlink-target.mp4")
+        let selectedSymlinkURL = rootDirectory.appendingPathComponent("selected-symlink.mp4")
+        try await DynamicBackgroundTestMedia.makeSilentH264Video(at: realVideoURL)
+        try fileManager.createSymbolicLink(at: selectedSymlinkURL, withDestinationURL: realVideoURL)
+
+        let store = PanelBackgroundStore(directoryURL: directory)
+        try await store.importBackground(from: selectedSymlinkURL)
+        let symlinkManifest = try loadManifest(in: directory)
+        let storedVideoURL = directory.appendingPathComponent(symlinkManifest.mediaFilename)
+        let storedValues = try storedVideoURL.resourceValues(
+            forKeys: [.isRegularFileKey, .isSymbolicLinkKey]
+        )
+        expect(storedValues.isRegularFile == true, "Selected video symlink must become a regular file")
+        expect(storedValues.isSymbolicLink != true, "Committed video must not remain a symlink")
+        try expect(
+            try Data(contentsOf: storedVideoURL) == Data(contentsOf: realVideoURL),
+            "Materialized symlink video bytes must match the selected target"
+        )
+        expect(
+            isCanonicalDescendant(storedVideoURL, of: directory),
+            "Committed video canonical path must remain inside PanelBackground"
+        )
+
+        let transformedDirectory = rootDirectory.appendingPathComponent(
+            "preferred-transform",
+            isDirectory: true
+        )
+        let transformedSource = rootDirectory.appendingPathComponent("preferred-transform.mov")
+        try await DynamicBackgroundTestMedia.makePreferredTransformVideo(
+            at: transformedSource,
+            workingDirectory: rootDirectory.appendingPathComponent(
+                "preferred-transform-fixture",
+                isDirectory: true
+            )
+        )
+        let sourceAsset = AVURLAsset(url: transformedSource)
+        guard let sourceTrack = try await sourceAsset.loadTracks(withMediaType: .video).first else {
+            fatalError("Preferred-transform fixture must contain video")
+        }
+        let preferredTransform = try await sourceTrack.load(.preferredTransform)
+        expect(preferredTransform != .identity, "Fixture must carry a non-identity transform")
+
+        let transformedStore = PanelBackgroundStore(directoryURL: transformedDirectory)
+        try await transformedStore.importBackground(from: transformedSource)
+        let transformedManifest = try loadManifest(in: transformedDirectory)
+        guard let posterFilename = transformedManifest.posterFilename else {
+            fatalError("Transformed video must publish a poster")
+        }
+        let posterURL = transformedDirectory.appendingPathComponent(posterFilename)
+        try expect(
+            try pixelSize(at: posterURL) == CGSize(width: 24, height: 32),
+            "Poster must apply the source track's portrait transform"
+        )
+        let posterColor = try centerColor(at: posterURL)
+        expect(
+            posterColor.redComponent > 0.7
+                && posterColor.redComponent > posterColor.blueComponent * 2,
+            "Exact first-frame poster must retain the red frame rather than a later blue frame"
+        )
+    }
+
+    @MainActor
+    private static func checkTypeResolutionAndUnknownExtensionLimit(
+        in rootDirectory: URL
+    ) async throws {
+        let directory = rootDirectory.appendingPathComponent("type-resolution", isDirectory: true)
+        let store = PanelBackgroundStore(directoryURL: directory)
+
+        let gifNamedPNG = rootDirectory.appendingPathComponent("gif-named.png")
+        try DynamicBackgroundTestMedia.makeTwoFrameGIF(at: gifNamedPNG)
+        try await store.importBackground(from: gifNamedPNG)
+        expect(store.asset?.kind == .staticImage, "Declared PNG type must precede ImageIO GIF content")
+
+        let pngNamedGIF = rootDirectory.appendingPathComponent("png-named.gif")
+        try DynamicBackgroundTestMedia.makePNG(at: pngNamedGIF)
+        try await store.importBackground(from: pngNamedGIF)
+        expect(
+            store.asset?.kind == .convertedGIF,
+            "Declared GIF type must precede ImageIO PNG content"
+        )
+
+        let unknownGIF = rootDirectory.appendingPathComponent("unknown-gif.payload")
+        try DynamicBackgroundTestMedia.makeTwoFrameGIF(at: unknownGIF)
+        try await store.importBackground(from: unknownGIF)
+        expect(
+            store.asset?.kind == .convertedGIF,
+            "A bounded content probe must identify GIF when declarations are unknown"
+        )
+
+        let manifestBeforeLimit = try manifestData(in: directory)
+        let filesBeforeLimit = try fileSnapshot(in: directory)
+        let oversizedUnknownGIF = rootDirectory.appendingPathComponent("oversized-gif.payload")
+        try DynamicBackgroundTestMedia.makeTwoFrameGIF(at: oversizedUnknownGIF)
+        try DynamicBackgroundTestMedia.extendFile(
+            at: oversizedUnknownGIF,
+            toByteCount: PanelBackgroundImportLimits.maximumGIFBytes + 1
+        )
+        do {
+            try await store.importBackground(from: oversizedUnknownGIF)
+            fatalError("Unknown-extension GIF above 100 MiB must be rejected")
+        } catch PanelBackgroundImportError.gifTooLarge {}
+        try expect(
+            try manifestData(in: directory) == manifestBeforeLimit,
+            "Unknown-extension limit rejection must preserve manifest"
+        )
+        try expect(
+            try fileSnapshot(in: directory) == filesBeforeLimit,
+            "Unknown-extension limit rejection must occur before store publication"
+        )
+    }
+
+    @MainActor
+    private static func checkInjectedTransactionFailures(in rootDirectory: URL) async throws {
+        let fileManager = TransactionFaultFileManager()
+        let directory = rootDirectory.appendingPathComponent("fault-injection", isDirectory: true)
+        fileManager.manifestURL = directory.appendingPathComponent("manifest.json")
+        let baselineSource = rootDirectory.appendingPathComponent("fault-baseline.png")
+        let gifSource = rootDirectory.appendingPathComponent("fault-replacement.gif")
+        try DynamicBackgroundTestMedia.makePNG(at: baselineSource)
+        try DynamicBackgroundTestMedia.makeTwoFrameGIF(at: gifSource)
+        let store = PanelBackgroundStore(
+            directoryURL: directory,
+            fileManager: fileManager,
+            writeManifest: fileManager.writeManifest
+        )
+        try await store.importBackground(from: baselineSource)
+
+        func capturePrior() throws -> (String?, Data, [String: Data]) {
+            (store.asset?.id, try manifestData(in: directory), try fileSnapshot(in: directory))
+        }
+        func expectPrior(_ prior: (String?, Data, [String: Data]), _ message: String) throws {
+            expect(store.asset?.id == prior.0, "\(message): asset identity changed")
+            try expect(try manifestData(in: directory) == prior.1, "\(message): manifest changed")
+            try expect(try fileSnapshot(in: directory) == prior.2, "\(message): files changed")
+            try expect(
+                try stagingEntries(in: directory).isEmpty,
+                "\(message): staging files leaked"
+            )
+        }
+
+        var prior = try capturePrior()
+        fileManager.resetFaults()
+        fileManager.failMoveDestinationPrefix = "poster-"
+        do {
+            try await store.importBackground(from: gifSource)
+            fatalError("Injected poster move failure must throw")
+        } catch PanelBackgroundImportError.unableToWrite {}
+        try expectPrior(prior, "Failure after media move")
+
+        prior = try capturePrior()
+        fileManager.resetFaults()
+        fileManager.failManifestOperationNumbers = [1]
+        do {
+            try await store.importBackground(from: gifSource)
+            fatalError("Injected manifest replacement failure must throw")
+        } catch PanelBackgroundImportError.unableToWrite {}
+        try expectPrior(prior, "Failure after poster move")
+
+        prior = try capturePrior()
+        fileManager.resetFaults()
+        fileManager.corruptManifestOperationNumbers = [1]
+        do {
+            try await store.importBackground(from: gifSource)
+            fatalError("Corrupt manifest replacement failure must throw")
+        } catch PanelBackgroundImportError.unableToWrite {}
+        try expectPrior(prior, "Failure after corrupt manifest replacement")
+
+        prior = try capturePrior()
+        fileManager.resetFaults()
+        fileManager.hideCommittedPosterOnce = true
+        do {
+            try await store.importBackground(from: gifSource)
+            fatalError("Injected committed reload failure must throw")
+        } catch PanelBackgroundImportError.unableToWrite {}
+        try expectPrior(prior, "Failure after manifest replacement")
+
+        fileManager.resetFaults()
+        fileManager.hideCommittedPosterOnce = true
+        fileManager.failManifestOperationNumbers = [2]
+        do {
+            try await store.importBackground(from: gifSource)
+            fatalError("Manifest restoration failure must surface")
+        } catch PanelBackgroundImportError.rollbackFailed {}
+        let adoptedManifest = try loadManifest(in: directory)
+        expect(
+            store.asset?.id == adoptedManifest.generationID,
+            "Restoration failure must adopt the coherent newly committed manifest"
+        )
+        try expectManifestReferencesExistingFiles(adoptedManifest, in: directory)
+
+        let adoptedURLs = urlsReferenced(by: adoptedManifest, in: directory)
+        fileManager.resetFaults()
+        fileManager.failRemovePaths = [adoptedURLs[0].path]
+        do {
+            try await store.importBackground(from: baselineSource)
+            fatalError("Committed old-generation cleanup failure must surface")
+        } catch PanelBackgroundImportError.cleanupFailed {}
+        let cleanupManifest = try loadManifest(in: directory)
+        expect(store.asset?.id == cleanupManifest.generationID, "Cleanup failure must retain new asset")
+        try expectManifestReferencesExistingFiles(cleanupManifest, in: directory)
+        expect(
+            FileManager.default.fileExists(atPath: adoptedURLs[0].path),
+            "Failed old-generation cleanup may leave only an unreferenced leftover"
+        )
+        fileManager.resetFaults()
+        try? FileManager.default.removeItem(at: adoptedURLs[0])
+
+        prior = try capturePrior()
+        fileManager.resetFaults()
+        fileManager.failMoveDestinationPrefix = "poster-"
+        fileManager.failRemoveDestinationPrefix = "media-"
+        do {
+            try await store.importBackground(from: gifSource)
+            fatalError("Rollback cleanup failure must surface")
+        } catch PanelBackgroundImportError.rollbackFailed {}
+        expect(store.asset?.id == prior.0, "Rollback cleanup failure must preserve prior asset")
+        try expect(try manifestData(in: directory) == prior.1, "Rollback cleanup must preserve manifest")
+        let currentManifest = try loadManifest(in: directory)
+        try expectManifestReferencesExistingFiles(currentManifest, in: directory)
+        try expect(
+            try fileSnapshot(in: directory).count == prior.2.count + 1,
+            "Rollback cleanup failure may leave one surfaced unreferenced media file"
+        )
+    }
+
+    @MainActor
+    private static func checkSynchronousTransactionFailures(in rootDirectory: URL) async throws {
+        let fileManager = TransactionFaultFileManager()
+        let directory = rootDirectory.appendingPathComponent("sync-faults", isDirectory: true)
+        fileManager.manifestURL = directory.appendingPathComponent("manifest.json")
+        let gifSource = rootDirectory.appendingPathComponent("sync-baseline.gif")
+        let staticSource = rootDirectory.appendingPathComponent("sync-replacement.png")
+        try DynamicBackgroundTestMedia.makeTwoFrameGIF(at: gifSource)
+        try DynamicBackgroundTestMedia.makePNG(at: staticSource)
+        let store = PanelBackgroundStore(
+            directoryURL: directory,
+            fileManager: fileManager,
+            writeManifest: fileManager.writeManifest
+        )
+        try await store.importBackground(from: gifSource)
+
+        let priorID = store.asset?.id
+        let priorManifest = try manifestData(in: directory)
+        let priorFiles = try fileSnapshot(in: directory)
+        fileManager.resetFaults()
+        fileManager.failRemovePaths = [directory.appendingPathComponent("manifest.json").path]
+        do {
+            try store.importImage(from: staticSource)
+            fatalError("Compatibility manifest-removal failure must throw")
+        } catch PanelBackgroundImportError.unableToWrite {}
+        expect(store.asset?.id == priorID, "Sync publication failure must preserve prior asset")
+        try expect(try manifestData(in: directory) == priorManifest, "Sync failure must preserve manifest")
+        try expect(try fileSnapshot(in: directory) == priorFiles, "Sync failure must restore legacy output")
+
+        let oldManifest = try loadManifest(in: directory)
+        let oldURLs = urlsReferenced(by: oldManifest, in: directory)
+        fileManager.resetFaults()
+        fileManager.failRemovePaths = [oldURLs[0].path]
+        do {
+            try store.importImage(from: staticSource)
+            fatalError("Compatibility old-generation cleanup failure must surface")
+        } catch PanelBackgroundImportError.cleanupFailed {}
+        expect(store.asset?.kind == .staticImage, "Sync cleanup failure must keep new legacy asset")
+        expect(
+            !FileManager.default.fileExists(
+                atPath: directory.appendingPathComponent("manifest.json").path
+            ),
+            "Sync cleanup failure must leave legacy publication authoritative"
+        )
+        let legacyValues = try store.fileURL.resourceValues(
+            forKeys: [.isRegularFileKey, .isSymbolicLinkKey]
+        )
+        expect(legacyValues.isRegularFile == true, "Sync committed legacy output must be regular")
+        expect(legacyValues.isSymbolicLink != true, "Sync committed legacy output must not be a symlink")
+        expect(FileManager.default.fileExists(atPath: oldURLs[0].path), "Failed cleanup may leave old media")
+    }
+
+    @MainActor
+    private static func checkStartupManifestHardening(in rootDirectory: URL) async throws {
+        let outsidePNG = rootDirectory.appendingPathComponent("manifest-outside.png")
+        try DynamicBackgroundTestMedia.makePNG(at: outsidePNG)
+
+        try checkRejectedStartupManifest(
+            in: rootDirectory,
+            name: "unsupported-schema",
+            manifest: PanelBackgroundManifest(
+                schemaVersion: 2,
+                generationID: "unsupported",
+                kind: .staticImage,
+                mediaFilename: "media.png",
+                posterFilename: nil,
+                originalTypeIdentifier: "public.png",
+                hasAudio: false
+            ),
+            setup: { directory in
+                try DynamicBackgroundTestMedia.makePNG(
+                    at: directory.appendingPathComponent("media.png")
+                )
+            }
+        )
+        try checkRejectedStartupManifest(
+            in: rootDirectory,
+            name: "traversal-media",
+            manifest: PanelBackgroundManifest(
+                schemaVersion: 1,
+                generationID: "traversal",
+                kind: .staticImage,
+                mediaFilename: "../manifest-outside.png",
+                posterFilename: nil,
+                originalTypeIdentifier: "public.png",
+                hasAudio: false
+            )
+        )
+        try checkRejectedStartupManifest(
+            in: rootDirectory,
+            name: "absolute-media",
+            manifest: PanelBackgroundManifest(
+                schemaVersion: 1,
+                generationID: "absolute",
+                kind: .staticImage,
+                mediaFilename: outsidePNG.path,
+                posterFilename: nil,
+                originalTypeIdentifier: "public.png",
+                hasAudio: false
+            )
+        )
+        try checkRejectedStartupManifest(
+            in: rootDirectory,
+            name: "unsafe-static-poster",
+            manifest: PanelBackgroundManifest(
+                schemaVersion: 1,
+                generationID: "unsafe-poster",
+                kind: .staticImage,
+                mediaFilename: "media.png",
+                posterFilename: "poster\\escape.png",
+                originalTypeIdentifier: "public.png",
+                hasAudio: false
+            ),
+            setup: { directory in
+                try DynamicBackgroundTestMedia.makePNG(
+                    at: directory.appendingPathComponent("media.png")
+                )
+                try DynamicBackgroundTestMedia.makePNG(
+                    at: directory.appendingPathComponent("poster\\escape.png")
+                )
+            }
+        )
+        try checkRejectedStartupManifest(
+            in: rootDirectory,
+            name: "symlink-media",
+            manifest: PanelBackgroundManifest(
+                schemaVersion: 1,
+                generationID: "symlink-media",
+                kind: .staticImage,
+                mediaFilename: "media.png",
+                posterFilename: nil,
+                originalTypeIdentifier: "public.png",
+                hasAudio: false
+            ),
+            setup: { directory in
+                try FileManager.default.createSymbolicLink(
+                    at: directory.appendingPathComponent("media.png"),
+                    withDestinationURL: outsidePNG
+                )
+            }
+        )
+        try checkRejectedStartupManifest(
+            in: rootDirectory,
+            name: "symlink-poster",
+            manifest: PanelBackgroundManifest(
+                schemaVersion: 1,
+                generationID: "symlink-poster",
+                kind: .video,
+                mediaFilename: "media.mov",
+                posterFilename: "poster.png",
+                originalTypeIdentifier: "com.apple.quicktime-movie",
+                hasAudio: false
+            ),
+            setup: { directory in
+                try Data("regular media".utf8).write(
+                    to: directory.appendingPathComponent("media.mov")
+                )
+                try FileManager.default.createSymbolicLink(
+                    at: directory.appendingPathComponent("poster.png"),
+                    withDestinationURL: outsidePNG
+                )
+            }
+        )
+
+        let malformedDirectory = rootDirectory.appendingPathComponent(
+            "startup-malformed",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: malformedDirectory,
+            withIntermediateDirectories: true
+        )
+        try DynamicBackgroundTestMedia.makePNG(
+            at: malformedDirectory.appendingPathComponent("background.png")
+        )
+        try Data("{ malformed".utf8).write(
+            to: malformedDirectory.appendingPathComponent("manifest.json")
+        )
+        expect(
+            PanelBackgroundStore(directoryURL: malformedDirectory).asset?.id
+                == "legacy-background.png",
+            "Malformed manifest must fall back to legacy PNG"
+        )
+
+        let survivingDirectory = rootDirectory.appendingPathComponent(
+            "startup-current-survives",
+            isDirectory: true
+        )
+        let sourceURL = rootDirectory.appendingPathComponent("startup-current.png")
+        try DynamicBackgroundTestMedia.makePNG(at: sourceURL)
+        let store = PanelBackgroundStore(directoryURL: survivingDirectory)
+        try await store.importBackground(from: sourceURL)
+        let manifest = try loadManifest(in: survivingDirectory)
+        let referencedURL = survivingDirectory.appendingPathComponent(manifest.mediaFilename)
+        let referencedData = try Data(contentsOf: referencedURL)
+        let stagingDirectory = survivingDirectory.appendingPathComponent(
+            "staging-interrupted",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: stagingDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(
+            at: stagingDirectory.appendingPathComponent(manifest.mediaFilename),
+            withDestinationURL: referencedURL
+        )
+        let restored = PanelBackgroundStore(directoryURL: survivingDirectory)
+        expect(restored.asset?.id == manifest.generationID, "Current manifest must survive staging cleanup")
+        try expect(
+            try Data(contentsOf: referencedURL) == referencedData,
+            "Staging cleanup must not follow symlinks into current generation"
+        )
+        expect(!FileManager.default.fileExists(atPath: stagingDirectory.path), "Staging directory must be removed")
+    }
+
+    @MainActor
+    private static func checkRejectedStartupManifest(
+        in rootDirectory: URL,
+        name: String,
+        manifest: PanelBackgroundManifest,
+        setup: (URL) throws -> Void = { _ in }
+    ) throws {
+        let directory = rootDirectory.appendingPathComponent("startup-\(name)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try DynamicBackgroundTestMedia.makePNG(
+            at: directory.appendingPathComponent("background.png")
+        )
+        try setup(directory)
+        let data = try JSONEncoder().encode(manifest)
+        try data.write(to: directory.appendingPathComponent("manifest.json"))
+        let store = PanelBackgroundStore(directoryURL: directory)
+        expect(
+            store.asset?.id == "legacy-background.png",
+            "Unsafe startup manifest \(name) must fall back to legacy PNG"
+        )
+    }
+
+    private static func generationEntries(in directory: URL) throws -> [URL] {
+        try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        ).filter {
+            $0.lastPathComponent.hasPrefix("media-")
+                || $0.lastPathComponent.hasPrefix("poster-")
+        }
+    }
+
+    private static func centerColor(at url: URL) throws -> NSColor {
+        guard let representation = NSBitmapImageRep(data: try Data(contentsOf: url)),
+              let color = representation.colorAt(
+                x: representation.pixelsWide / 2,
+                y: representation.pixelsHigh / 2
+              )?.usingColorSpace(NSColorSpace.sRGB) else {
+            throw StoreCheckError.unreadableImage
+        }
+        return color
+    }
+
+    private static func isCanonicalDescendant(_ child: URL, of directory: URL) -> Bool {
+        let rootPath = directory.resolvingSymlinksInPath().standardizedFileURL.path
+        let childPath = child.resolvingSymlinksInPath().standardizedFileURL.path
+        return childPath.hasPrefix(rootPath + "/")
+    }
+
     private static func loadManifest(in directory: URL) throws -> PanelBackgroundManifest {
         try JSONDecoder().decode(
             PanelBackgroundManifest.self,
@@ -372,6 +967,116 @@ private final class PublicationObservingFileManager: FileManager, @unchecked Sen
     func resetMoveObservations() {
         manifestSnapshotsDuringMove = []
     }
+}
+
+private actor ImportPreparationGate {
+    private var isPaused = false
+    private var isReleased = false
+    private var pauseWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func pause() async {
+        isPaused = true
+        let waiters = pauseWaiters
+        pauseWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+        guard !isReleased else { return }
+        await withCheckedContinuation { continuation in
+            releaseWaiters.append(continuation)
+        }
+    }
+
+    func waitUntilPaused() async {
+        guard !isPaused else { return }
+        await withCheckedContinuation { continuation in
+            pauseWaiters.append(continuation)
+        }
+    }
+
+    func resume() {
+        isReleased = true
+        let waiters = releaseWaiters
+        releaseWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+    }
+}
+
+private final class TransactionFaultFileManager: FileManager, @unchecked Sendable {
+    var manifestURL: URL?
+    var failMoveDestinationPrefix: String?
+    var failRemoveDestinationPrefix: String?
+    var failRemovePaths: Set<String> = []
+    var failManifestOperationNumbers: Set<Int> = []
+    var corruptManifestOperationNumbers: Set<Int> = []
+    var hideCommittedPosterOnce = false
+
+    private var manifestOperationCount = 0
+    private var failedRemovePaths: Set<String> = []
+    private var didFailRemovePrefix = false
+
+    override func moveItem(at srcURL: URL, to dstURL: URL) throws {
+        if let prefix = failMoveDestinationPrefix,
+           dstURL.lastPathComponent.hasPrefix(prefix) {
+            throw StoreInjectedFailure.requested
+        }
+        try super.moveItem(at: srcURL, to: dstURL)
+    }
+
+    func writeManifest(_ data: Data, to url: URL) throws {
+        try beginManifestOperation()
+        if corruptManifestOperationNumbers.contains(manifestOperationCount) {
+            try Data("{ corrupt".utf8).write(to: url, options: .atomic)
+            throw StoreInjectedFailure.requested
+        }
+        try data.write(to: url, options: .atomic)
+    }
+
+    override func removeItem(at URL: URL) throws {
+        if failRemovePaths.contains(URL.path), !failedRemovePaths.contains(URL.path) {
+            failedRemovePaths.insert(URL.path)
+            throw StoreInjectedFailure.requested
+        }
+        if let prefix = failRemoveDestinationPrefix,
+           URL.lastPathComponent.hasPrefix(prefix),
+           !didFailRemovePrefix {
+            didFailRemovePrefix = true
+            throw StoreInjectedFailure.requested
+        }
+        try super.removeItem(at: URL)
+    }
+
+    override func fileExists(atPath path: String) -> Bool {
+        if hideCommittedPosterOnce,
+           manifestOperationCount > 0,
+           URL(fileURLWithPath: path).lastPathComponent.hasPrefix("poster-") {
+            hideCommittedPosterOnce = false
+            return false
+        }
+        return super.fileExists(atPath: path)
+    }
+
+    func resetFaults() {
+        failMoveDestinationPrefix = nil
+        failRemoveDestinationPrefix = nil
+        failRemovePaths = []
+        failManifestOperationNumbers = []
+        corruptManifestOperationNumbers = []
+        hideCommittedPosterOnce = false
+        manifestOperationCount = 0
+        failedRemovePaths = []
+        didFailRemovePrefix = false
+    }
+
+    private func beginManifestOperation() throws {
+        manifestOperationCount += 1
+        if failManifestOperationNumbers.contains(manifestOperationCount) {
+            throw StoreInjectedFailure.requested
+        }
+    }
+}
+
+private enum StoreInjectedFailure: Error {
+    case requested
 }
 
 private enum StoreCheckError: Error {
