@@ -5,6 +5,7 @@ enum DynamicBackgroundPolicyCheck {
     static func main() {
         checkImportLimits()
         checkMenuAudioPersistence()
+        checkResetDisablesPersistedMenuAudio()
         print("Dynamic background policy checks passed")
     }
 
@@ -38,6 +39,22 @@ enum DynamicBackgroundPolicyCheck {
         expect(settings.isPanelBackgroundAudioEnabled)
         settings.didRemovePanelBackground()
         expect(!settings.isPanelBackgroundAudioEnabled)
+    }
+
+    private static func checkResetDisablesPersistedMenuAudio() {
+        let suiteName = "com.xipiyoung.ColdHot.dynamic-background-reset-check"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            fatalError("Unable to create isolated defaults suite")
+        }
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let settings = MonitorSettings(defaults: defaults)
+        settings.setPanelBackgroundAudioEnabled(true)
+        settings.reset()
+
+        expect(!settings.isPanelBackgroundAudioEnabled)
+        expect(!MonitorSettings(defaults: defaults).isPanelBackgroundAudioEnabled)
     }
 
     private static func expect(
