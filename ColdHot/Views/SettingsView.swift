@@ -694,9 +694,23 @@ struct SettingsView: View {
                 HStack(spacing: 10) {
                     Image(systemName: asset.kind == .staticImage ? "photo" : "film")
                         .foregroundStyle(.secondary)
-                    Text(backgroundResourceLabel(for: asset.kind))
-                        .font(.headline)
-                        .settingsAccessibilityLabel(backgroundResourceLabel(for: asset.kind))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("自定义背景")
+                            .font(.headline)
+                            .settingsAccessibilityLabel("自定义背景")
+                        Text("当前：\(backgroundResourceTypeLabel(for: asset.kind))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .settingsAccessibilityLabel(
+                                "当前：\(backgroundResourceTypeLabel(for: asset.kind))"
+                            )
+                        Text("支持图片、GIF、MP4、MOV、M4V 及系统视频")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .settingsAccessibilityLabel(
+                                "支持图片、GIF、MP4、MOV、M4V 及系统视频"
+                            )
+                    }
                     Spacer()
                     Button("更换背景…") { isChoosingBackground = true }
                         .settingsControlEnabled(
@@ -889,10 +903,12 @@ struct SettingsView: View {
                         Text("自定义背景")
                             .font(.headline)
                             .settingsAccessibilityLabel("自定义背景")
-                        Text("支持系统可读取的图片、GIF 与视频")
+                        Text("支持图片、GIF、MP4、MOV、M4V 及系统视频")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                            .settingsAccessibilityLabel("图片、GIF 与视频")
+                            .settingsAccessibilityLabel(
+                                "支持图片、GIF、MP4、MOV、M4V 及系统视频"
+                            )
                     }
                     Spacer()
                     Button("选择背景…") { isChoosingBackground = true }
@@ -1150,11 +1166,11 @@ struct SettingsView: View {
         )
     }
 
-    private func backgroundResourceLabel(for kind: PanelBackgroundMediaKind) -> String {
+    private func backgroundResourceTypeLabel(for kind: PanelBackgroundMediaKind) -> String {
         switch kind {
-        case .staticImage: "自定义图片"
+        case .staticImage: "静态图片"
         case .convertedGIF: "动态 GIF"
-        case .video: "视频背景"
+        case .video: "视频"
         }
     }
 

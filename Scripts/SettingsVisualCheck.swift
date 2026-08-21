@@ -197,7 +197,7 @@ enum SettingsVisualCheck {
                         appearance: appearance.name,
                         size: size.value,
                         outputPath: outputPath,
-                        expectedBackgroundLabel: page == .appearance ? "自定义图片" : nil,
+                        expectedBackgroundTypeLabel: page == .appearance ? "静态图片" : nil,
                         expectsPreviewAudioToggle: page == .appearance ? false : nil
                     )
                     renderedCaseCount += 1
@@ -319,7 +319,7 @@ enum SettingsVisualCheck {
         appearance: NSAppearance.Name,
         size: CGSize,
         outputPath: String,
-        expectedBackgroundLabel: String? = nil,
+        expectedBackgroundTypeLabel: String? = nil,
         expectsPreviewAudioToggle: Bool? = nil
     ) throws -> SettingsRenderReport {
         let identifiers = AccessibilityIdentifierStore()
@@ -393,8 +393,14 @@ enum SettingsVisualCheck {
             expect(labels.values.contains("菜单面板外观预览"))
             expect(identifiers.values.contains("settings-appearance-preview-column"))
             expect(identifiers.values.contains("settings-appearance-controls-column"))
-            if let expectedBackgroundLabel {
-                expect(labels.values.contains(expectedBackgroundLabel))
+            if let expectedBackgroundTypeLabel {
+                expect(labels.values.contains("自定义背景"))
+                expect(labels.values.contains("当前：\(expectedBackgroundTypeLabel)"))
+                expect(
+                    labels.values.contains(
+                        "支持图片、GIF、MP4、MOV、M4V 及系统视频"
+                    )
+                )
                 expect(labels.values.contains("更换背景…"))
             }
             if let expectsPreviewAudioToggle {
@@ -529,7 +535,7 @@ enum SettingsVisualCheck {
                 size: SettingsLayout.minimumContentSize,
                 outputPath: outputDirectory
                     + "/fixture-eligibility-\(kind.rawValue)-\(hasAudio).png",
-                expectedBackgroundLabel: backgroundLabel(for: kind),
+                expectedBackgroundTypeLabel: backgroundTypeLabel(for: kind),
                 expectsPreviewAudioToggle: shouldExposeAudio
             )
             expect(
@@ -586,7 +592,7 @@ enum SettingsVisualCheck {
                     outputPath: outputDirectory
                         + "/fixture-audio-video-\(appearance.rawValue)-"
                         + "\(Int(size.width))x\(Int(size.height)).png",
-                    expectedBackgroundLabel: "视频背景",
+                    expectedBackgroundTypeLabel: "视频",
                     expectsPreviewAudioToggle: true
                 )
                 expect(report.labels.contains("关闭预览声音"))
@@ -623,7 +629,7 @@ enum SettingsVisualCheck {
                     outputPath: outputDirectory
                         + "/fixture-reduce-motion-\(appearance.rawValue)-"
                         + "\(Int(size.width))x\(Int(size.height)).png",
-                    expectedBackgroundLabel: "视频背景",
+                    expectedBackgroundTypeLabel: "视频",
                     expectsPreviewAudioToggle: true
                 )
                 expect(report.identifiers.contains("settings-preview-audio-toggle"))
@@ -973,7 +979,11 @@ enum SettingsVisualCheck {
                 )
                 expect(emptyReport.labels.contains("自定义背景"))
                 expect(emptyReport.labels.contains("选择背景…"))
-                expect(emptyReport.labels.contains("图片、GIF 与视频"))
+                expect(
+                    emptyReport.labels.contains(
+                        "支持图片、GIF、MP4、MOV、M4V 及系统视频"
+                    )
+                )
 
                 let operationState = SettingsBackgroundOperationState(isProcessing: true)
                 let processingReport = try render(
@@ -1007,7 +1017,7 @@ enum SettingsVisualCheck {
                     outputPath: outputDirectory
                         + "/fixture-populated-processing-\(appearance.rawValue)-"
                         + "\(Int(size.width))x\(Int(size.height)).png",
-                    expectedBackgroundLabel: "自定义图片",
+                    expectedBackgroundTypeLabel: "静态图片",
                     expectsPreviewAudioToggle: false
                 )
                 expect(populatedProcessingReport.labels.contains("正在处理动态背景…"))
@@ -1087,11 +1097,11 @@ enum SettingsVisualCheck {
         )
     }
 
-    private static func backgroundLabel(for kind: PanelBackgroundMediaKind) -> String {
+    private static func backgroundTypeLabel(for kind: PanelBackgroundMediaKind) -> String {
         switch kind {
-        case .staticImage: "自定义图片"
+        case .staticImage: "静态图片"
         case .convertedGIF: "动态 GIF"
-        case .video: "视频背景"
+        case .video: "视频"
         }
     }
 
