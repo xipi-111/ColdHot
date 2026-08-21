@@ -89,6 +89,10 @@ final class MonitorSettings: ObservableObject {
         didSet { persistThresholdRules() }
     }
 
+    @Published private(set) var thresholdSeverityColors: ThresholdSeverityColors {
+        didSet { persistThresholdSeverityColors() }
+    }
+
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
@@ -185,6 +189,13 @@ final class MonitorSettings: ObservableObject {
             range: -1...1
         )
 
+        if let data = defaults.data(forKey: Keys.thresholdSeverityColors),
+           let storedColors = try? JSONDecoder().decode(ThresholdSeverityColors.self, from: data) {
+            thresholdSeverityColors = storedColors
+        } else {
+            thresholdSeverityColors = .recommended
+        }
+
         let defaultRules = Dictionary(uniqueKeysWithValues: ThresholdMetric.allCases.map {
             ($0, ThresholdRule.defaultRule(for: $0))
         })
@@ -194,12 +205,16 @@ final class MonitorSettings: ObservableObject {
                 result[rule.kind] = ThresholdRule(
                     kind: rule.kind,
                     isEnabled: rule.isEnabled,
-                    value: rule.kind.clamped(rule.value)
+                    value: rule.value,
+                    level2Value: rule.level2Value,
+                    level3Value: rule.level3Value
                 )
             }
         } else {
             thresholdRules = defaultRules
         }
+        persistThresholdRules()
+        persistThresholdSeverityColors()
     }
 
     func isEnabled(_ metric: MetricKind) -> Bool {
@@ -246,12 +261,87 @@ final class MonitorSettings: ObservableObject {
     }
 
     func setThresholdValue(_ value: Double, for kind: ThresholdMetric) {
+        setThresholdValue(value, for: kind, severity: .level1)
+    }
+
+    func setThresholdValue(
+        _ value: Double,
+        for kind: ThresholdMetric,
+        severity: ThresholdSeverity
+    ) {
         guard BuildVariant.availableThresholdMetrics.contains(kind), value.isFinite else { return }
         var updated = thresholdRules
-        var rule = thresholdRule(for: kind)
-        rule.value = kind.clamped(value)
-        updated[kind] = rule
+        let current = thresholdRule(for: kind)
+        let values: (Double, Double, Double)
+        switch severity {
+        case .level1:
+            values = (value, current.level2Value, current.level3Value)
+        case .level2:
+            guard kind != .thermalState else { return }
+            values = (current.value, value, current.level3Value)
+        case .level3:
+            guard kind != .thermalState else { return }
+            values = (current.value, current.level2Value, value)
+        }
+        updated[kind] = ThresholdRule(
+            kind: kind,
+            isEnabled: current.isEnabled,
+            value: values.0,
+            level2Value: values.1,
+            level3Value: values.2
+        )
         thresholdRules = updated
+    }
+
+    func setThresholdValues(
+        level1: Double,
+        level2: Double,
+        level3: Double,
+        for kind: ThresholdMetric
+    ) {
+        guard BuildVariant.availableThresholdMetrics.contains(kind),
+              level1.isFinite, level2.isFinite, level3.isFinite else { return }
+        var updated = thresholdRules
+        let current = thresholdRule(for: kind)
+        updated[kind] = ThresholdRule(
+            kind: kind,
+            isEnabled: current.isEnabled,
+            value: level1,
+            level2Value: level2,
+            level3Value: level3
+        )
+        thresholdRules = updated
+    }
+
+    func setThresholdColor(
+        _ color: ThresholdColorComponents,
+        for severity: ThresholdSeverity
+    ) {
+        var updated = thresholdSeverityColors
+        switch severity {
+        case .level1: updated.level1Custom = color
+        case .level2: updated.level2 = color
+        case .level3: updated.level3 = color
+        }
+        thresholdSeverityColors = updated
+    }
+
+    func setLevelOneThresholdColorFollowsSystem(
+        _ followsSystem: Bool,
+        fallbackColor: ThresholdColorComponents = ThresholdColorComponents(
+            red: 1,
+            green: 1,
+            blue: 1,
+            alpha: 1
+        )
+    ) {
+        var updated = thresholdSeverityColors
+        updated.level1Custom = followsSystem ? nil : (updated.level1Custom ?? fallbackColor)
+        thresholdSeverityColors = updated
+    }
+
+    func restoreRecommendedThresholdColors() {
+        thresholdSeverityColors = .recommended
     }
 
     func setPanelBackgroundEnabled(_ enabled: Bool) {
@@ -394,6 +484,7 @@ final class MonitorSettings: ObservableObject {
         thresholdRules = Dictionary(uniqueKeysWithValues: ThresholdMetric.allCases.map {
             ($0, ThresholdRule.defaultRule(for: $0))
         })
+        restoreRecommendedThresholdColors()
     }
 
     private func persistMetrics() {
@@ -408,6 +499,12 @@ final class MonitorSettings: ObservableObject {
         let rules = thresholdRules.values.sorted { $0.kind.rawValue < $1.kind.rawValue }
         if let data = try? JSONEncoder().encode(rules) {
             defaults.set(data, forKey: Keys.thresholdRules)
+        }
+    }
+
+    private func persistThresholdSeverityColors() {
+        if let data = try? JSONEncoder().encode(thresholdSeverityColors) {
+            defaults.set(data, forKey: Keys.thresholdSeverityColors)
         }
     }
 
@@ -464,5 +561,6 @@ final class MonitorSettings: ObservableObject {
         static let panelBackgroundPositionY = "panelBackgroundPositionY"
         static let panelTextOpacity = "panelTextOpacity"
         static let thresholdRules = "thresholdRules"
+        static let thresholdSeverityColors = "thresholdSeverityColors"
     }
 }

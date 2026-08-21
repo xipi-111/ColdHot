@@ -5,6 +5,71 @@ enum ThresholdDirection {
     case below
 }
 
+enum ThresholdSeverity: Int, CaseIterable, Codable, Identifiable {
+    case level1 = 1
+    case level2 = 2
+    case level3 = 3
+
+    var id: Int { rawValue }
+
+    var title: String {
+        switch self {
+        case .level1: "一级"
+        case .level2: "二级"
+        case .level3: "三级"
+        }
+    }
+}
+
+struct ThresholdColorComponents: Codable, Equatable {
+    let red: Double
+    let green: Double
+    let blue: Double
+    let alpha: Double
+
+    init(red: Double, green: Double, blue: Double, alpha: Double) {
+        self.red = Self.bounded(red, fallback: 0)
+        self.green = Self.bounded(green, fallback: 0)
+        self.blue = Self.bounded(blue, fallback: 0)
+        self.alpha = Self.bounded(alpha, fallback: 1)
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            red: try container.decode(Double.self, forKey: .red),
+            green: try container.decode(Double.self, forKey: .green),
+            blue: try container.decode(Double.self, forKey: .blue),
+            alpha: try container.decode(Double.self, forKey: .alpha)
+        )
+    }
+
+    private static func bounded(_ value: Double, fallback: Double) -> Double {
+        if value.isNaN { return fallback }
+        if value == .infinity { return 1 }
+        if value == -.infinity { return 0 }
+        return min(max(value, 0), 1)
+    }
+}
+
+struct ThresholdSeverityColors: Codable, Equatable {
+    var level1Custom: ThresholdColorComponents?
+    var level2: ThresholdColorComponents
+    var level3: ThresholdColorComponents
+
+    static let recommended = ThresholdSeverityColors(
+        level1Custom: nil,
+        level2: ThresholdColorComponents(red: 1, green: 0.8, blue: 0, alpha: 1),
+        level3: ThresholdColorComponents(red: 1, green: 0.231, blue: 0.188, alpha: 1)
+    )
+}
+
+fileprivate struct ThresholdLevelValues {
+    let level1: Double
+    let level2: Double
+    let level3: Double
+}
+
 enum ThresholdMetric: String, CaseIterable, Codable, Identifiable, Hashable {
     case cpuUsage
     case gpuUsage
@@ -168,6 +233,75 @@ enum ThresholdMetric: String, CaseIterable, Codable, Identifiable, Hashable {
         }
     }
 
+    fileprivate func recommendedThresholdLevels(primary: Double) -> ThresholdLevelValues {
+        let primary = primary.isFinite ? clamped(primary) : defaultValue
+        switch self {
+        case .cpuUsage, .gpuUsage, .memoryUsage,
+             .temperatureCPU, .temperatureGPU, .temperatureMemory, .temperatureStorage,
+             .temperatureBattery, .temperatureAirflow, .temperatureWireless,
+             .temperaturePowerManagement:
+            return normalizedThresholdLevels(primary, primary + 5, primary + 10)
+        case .networkDownload, .networkUpload, .diskRead, .diskWrite:
+            return normalizedThresholdLevels(primary, primary * 1.5, primary * 2)
+        case .fanSpeed:
+            return normalizedThresholdLevels(primary, primary + 500, primary + 1_000)
+        case .systemPower, .batteryPower:
+            return normalizedThresholdLevels(primary, primary + 10, primary + 20)
+        case .batteryPercentage:
+            return normalizedThresholdLevels(primary, primary - 5, primary - 10)
+        case .thermalState:
+            return normalizedThresholdLevels(primary, 2, 3)
+        }
+    }
+
+    fileprivate func normalizedThresholdLevels(
+        _ level1: Double,
+        _ level2: Double,
+        _ level3: Double
+    ) -> ThresholdLevelValues {
+        let recommended = recommendedRawLevels(primary: level1)
+        let first = level1.isFinite ? clamped(level1) : clamped(defaultValue)
+        let second = level2.isFinite ? clamped(level2) : clamped(recommended.1)
+        let third = level3.isFinite ? clamped(level3) : clamped(recommended.2)
+        switch direction {
+        case .above:
+            let orderedSecond = max(first, second)
+            return ThresholdLevelValues(
+                level1: first,
+                level2: orderedSecond,
+                level3: max(orderedSecond, third)
+            )
+        case .below:
+            let orderedSecond = min(first, second)
+            return ThresholdLevelValues(
+                level1: first,
+                level2: orderedSecond,
+                level3: min(orderedSecond, third)
+            )
+        }
+    }
+
+    private func recommendedRawLevels(primary: Double) -> (Double, Double, Double) {
+        let primary = primary.isFinite ? primary : defaultValue
+        switch self {
+        case .cpuUsage, .gpuUsage, .memoryUsage,
+             .temperatureCPU, .temperatureGPU, .temperatureMemory, .temperatureStorage,
+             .temperatureBattery, .temperatureAirflow, .temperatureWireless,
+             .temperaturePowerManagement:
+            return (primary, primary + 5, primary + 10)
+        case .networkDownload, .networkUpload, .diskRead, .diskWrite:
+            return (primary, primary * 1.5, primary * 2)
+        case .fanSpeed:
+            return (primary, primary + 500, primary + 1_000)
+        case .systemPower, .batteryPower:
+            return (primary, primary + 10, primary + 20)
+        case .batteryPercentage:
+            return (primary, primary - 5, primary - 10)
+        case .thermalState:
+            return (primary, 2, 3)
+        }
+    }
+
     func measurement(from snapshot: PerformanceSnapshot) -> ThresholdMeasurement? {
         switch self {
         case .cpuUsage:
@@ -299,11 +433,81 @@ struct ThresholdRule: Codable, Equatable, Identifiable {
     let kind: ThresholdMetric
     var isEnabled: Bool
     var value: Double
+    var level2Value: Double
+    var level3Value: Double
 
     var id: ThresholdMetric { kind }
 
+    init(
+        kind: ThresholdMetric,
+        isEnabled: Bool,
+        value: Double,
+        level2Value: Double? = nil,
+        level3Value: Double? = nil
+    ) {
+        let recommended = kind.recommendedThresholdLevels(primary: value)
+        let normalized = kind.normalizedThresholdLevels(
+            value,
+            level2Value ?? recommended.level2,
+            level3Value ?? recommended.level3
+        )
+        self.kind = kind
+        self.isEnabled = isEnabled
+        self.value = normalized.level1
+        self.level2Value = normalized.level2
+        self.level3Value = normalized.level3
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let kind = try container.decode(ThresholdMetric.self, forKey: .kind)
+        let value = try container.decode(Double.self, forKey: .value)
+        self.init(
+            kind: kind,
+            isEnabled: try container.decode(Bool.self, forKey: .isEnabled),
+            value: value,
+            level2Value: try container.decodeIfPresent(Double.self, forKey: .level2Value),
+            level3Value: try container.decodeIfPresent(Double.self, forKey: .level3Value)
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(kind, forKey: .kind)
+        try container.encode(isEnabled, forKey: .isEnabled)
+        try container.encode(value, forKey: .value)
+        try container.encode(level2Value, forKey: .level2Value)
+        try container.encode(level3Value, forKey: .level3Value)
+    }
+
+    func severity(forActiveValue value: Double) -> ThresholdSeverity {
+        if kind == .thermalState {
+            if value >= 3 { return .level3 }
+            if value >= 2 { return .level2 }
+            return .level1
+        }
+        switch kind.direction {
+        case .above:
+            if value >= level3Value { return .level3 }
+            if value >= level2Value { return .level2 }
+            return .level1
+        case .below:
+            if value <= level3Value { return .level3 }
+            if value <= level2Value { return .level2 }
+            return .level1
+        }
+    }
+
     static func defaultRule(for kind: ThresholdMetric) -> ThresholdRule {
         ThresholdRule(kind: kind, isEnabled: false, value: kind.defaultValue)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case isEnabled
+        case value
+        case level2Value
+        case level3Value
     }
 }
 
@@ -317,6 +521,7 @@ struct ThresholdAlert: Identifiable, Equatable {
     let kind: ThresholdMetric
     let measurement: ThresholdMeasurement
     let thresholdValue: Double
+    let severity: ThresholdSeverity
     let activatedAt: Date
 
     var id: ThresholdMetric { kind }
@@ -333,6 +538,7 @@ struct ThresholdTriggerState {
     private(set) var recoveryCount = 0
     private(set) var isActive = false
     private(set) var latestMeasurement: ThresholdMeasurement?
+    private(set) var latestSeverity: ThresholdSeverity?
     private(set) var activatedAt: Date?
 
     mutating func update(
@@ -344,6 +550,7 @@ struct ThresholdTriggerState {
         latestMeasurement = measurement
 
         if isActive {
+            latestSeverity = rule.severity(forActiveValue: measurement.rawValue)
             if kind.isRecovered(value: measurement.rawValue, threshold: rule.value) {
                 recoveryCount += 1
                 if recoveryCount >= 3 {
@@ -351,6 +558,7 @@ struct ThresholdTriggerState {
                     triggerCount = 0
                     recoveryCount = 0
                     activatedAt = nil
+                    latestSeverity = nil
                     return .recovered
                 }
             } else {
@@ -366,11 +574,137 @@ struct ThresholdTriggerState {
                 triggerCount = 0
                 recoveryCount = 0
                 activatedAt = date
+                latestSeverity = rule.severity(forActiveValue: measurement.rawValue)
                 return .activated
             }
         } else {
             triggerCount = 0
         }
         return .unchanged
+    }
+}
+
+struct ThresholdEvaluation {
+    let kind: ThresholdMetric
+    let rule: ThresholdRule
+    let measurement: ThresholdMeasurement
+}
+
+struct ThresholdAlertStateChange {
+    let kind: ThresholdMetric
+    let transition: ThresholdTransition
+    let measurement: ThresholdMeasurement
+    let thresholdValue: Double
+}
+
+struct ThresholdAlertPresentationUpdate {
+    let changes: [ThresholdAlertStateChange]
+    let membershipChanged: Bool
+}
+
+struct ThresholdAlertPresentationState {
+    private var triggerStates: [ThresholdMetric: ThresholdTriggerState] = [:]
+    private var alertOrder: [ThresholdMetric] = []
+    private(set) var alertRotationIndex = 0
+
+    func isActive(_ kind: ThresholdMetric) -> Bool {
+        triggerStates[kind]?.isActive == true
+    }
+
+    mutating func update(
+        _ evaluations: [ThresholdEvaluation],
+        at date: Date = Date()
+    ) -> ThresholdAlertPresentationUpdate {
+        var changes: [ThresholdAlertStateChange] = []
+        var activatedKinds: [ThresholdMetric] = []
+
+        for evaluation in evaluations {
+            var state = triggerStates[evaluation.kind] ?? ThresholdTriggerState()
+            let transition = state.update(
+                kind: evaluation.kind,
+                rule: evaluation.rule,
+                measurement: evaluation.measurement,
+                at: date
+            )
+            triggerStates[evaluation.kind] = state
+
+            switch transition {
+            case .activated:
+                activatedKinds.append(evaluation.kind)
+            case .recovered:
+                alertOrder.removeAll { $0 == evaluation.kind }
+            case .unchanged:
+                continue
+            }
+            changes.append(
+                ThresholdAlertStateChange(
+                    kind: evaluation.kind,
+                    transition: transition,
+                    measurement: evaluation.measurement,
+                    thresholdValue: evaluation.rule.value
+                )
+            )
+        }
+
+        for kind in activatedKinds.reversed() {
+            alertOrder.removeAll { $0 == kind }
+            alertOrder.insert(kind, at: 0)
+        }
+        let membershipChanged = !changes.isEmpty
+        if membershipChanged {
+            alertRotationIndex = 0
+        }
+        return ThresholdAlertPresentationUpdate(
+            changes: changes,
+            membershipChanged: membershipChanged
+        )
+    }
+
+    mutating func remove(_ kinds: Set<ThresholdMetric>) -> Bool {
+        let removedActiveAlert = kinds.contains { triggerStates[$0]?.isActive == true }
+        for kind in kinds {
+            triggerStates.removeValue(forKey: kind)
+            alertOrder.removeAll { $0 == kind }
+        }
+        if removedActiveAlert {
+            alertRotationIndex = 0
+        }
+        return removedActiveAlert
+    }
+
+    func alerts(using rules: [ThresholdMetric: ThresholdRule]) -> [ThresholdAlert] {
+        alertOrder.compactMap { kind in
+            guard let state = triggerStates[kind], state.isActive,
+                  let measurement = state.latestMeasurement,
+                  let severity = state.latestSeverity,
+                  let activatedAt = state.activatedAt,
+                  let rule = rules[kind] else { return nil }
+            return ThresholdAlert(
+                kind: kind,
+                measurement: measurement,
+                thresholdValue: rule.value,
+                severity: severity,
+                activatedAt: activatedAt
+            )
+        }
+    }
+
+    func visibleAlert(using rules: [ThresholdMetric: ThresholdRule]) -> ThresholdAlert? {
+        let alerts = alerts(using: rules)
+        guard !alerts.isEmpty else { return nil }
+        return alerts[min(alertRotationIndex, alerts.count - 1)]
+    }
+
+    mutating func advanceRotation(
+        using rules: [ThresholdMetric: ThresholdRule]
+    ) -> ThresholdAlert? {
+        let alerts = alerts(using: rules)
+        guard alerts.count > 1 else { return alerts.first }
+        alertRotationIndex = (alertRotationIndex + 1) % alerts.count
+        return alerts[alertRotationIndex]
+    }
+
+    mutating func resetRotation() {
+        alertRotationIndex = 0
     }
 }

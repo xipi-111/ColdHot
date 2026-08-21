@@ -205,7 +205,83 @@ enum SettingsVisualCheck {
                 }
             }
         }
-        expect(renderedCaseCount == appearances.count * SettingsPage.allCases.count * 2)
+
+        let expandedFixtures: [(
+            slug: String,
+            parent: MetricKind,
+            tier: ThresholdMetric?,
+            scrollFraction: Double,
+            requiredIdentifiers: Set<String>
+        )] = [
+            (
+                "cpu",
+                .cpu,
+                .cpuUsage,
+                0.50,
+                [
+                    "settings-threshold-tiers-cpuUsage",
+                    "settings-threshold-cpuUsage-level2",
+                    "settings-threshold-cpuUsage-level3"
+                ]
+            ),
+            (
+                "battery",
+                .battery,
+                .batteryPercentage,
+                1,
+                [
+                    "settings-threshold-tiers-batteryPercentage",
+                    "settings-threshold-batteryPercentage-level2",
+                    "settings-threshold-batteryPercentage-level3"
+                ]
+            ),
+            (
+                "thermal",
+                .thermal,
+                nil,
+                0.88,
+                ["settings-threshold-thermalState-fixed-mapping"]
+            )
+        ]
+        for fixture in expandedFixtures {
+            settings.setThresholdEnabled(true, for: fixture.tier ?? .thermalState)
+        }
+        for appearance in appearances {
+            for size in [
+                (slug: "920x720", value: SettingsLayout.defaultContentSize),
+                (slug: "860x680", value: SettingsLayout.minimumContentSize)
+            ] {
+                for fixture in expandedFixtures {
+                    let view = SettingsView(
+                        settings: settings,
+                        panelBackgroundStore: backgroundStore,
+                        monitor: monitor,
+                        updateController: UpdateController(),
+                        initialPage: .alerts,
+                        initialExpandedThresholdMetrics: [fixture.parent],
+                        initialExpandedThresholdTiers: Set([fixture.tier].compactMap { $0 })
+                    )
+                    let outputPath = outputDirectory
+                        + "/\(appearance.slug)-alerts-expanded-\(fixture.slug)-\(size.slug).png"
+                    _ = try render(
+                        view,
+                        page: .alerts,
+                        appearance: appearance.name,
+                        size: size.value,
+                        outputPath: outputPath,
+                        additionalRequiredIdentifiers: fixture.requiredIdentifiers,
+                        scrollFraction: fixture.scrollFraction
+                    )
+                    renderedCaseCount += 1
+                    print(outputPath)
+                }
+            }
+        }
+        expect(
+            renderedCaseCount
+                == appearances.count
+                    * (SettingsPage.allCases.count * 2 + expandedFixtures.count * 2)
+        )
 
         let fixtureRoot = FileManager.default.temporaryDirectory.appendingPathComponent(
             "coldhot-settings-task6-fixtures-\(UUID().uuidString)",
@@ -265,7 +341,7 @@ enum SettingsVisualCheck {
                     get: { selection.value },
                     set: { selection.value = $0 }
                 ),
-                versionText: "1.3.2 (19)"
+                versionText: "1.5.0 (22)"
             )
         )
         hostingView.frame = NSRect(x: 0, y: 0, width: 204, height: 680)
@@ -320,7 +396,9 @@ enum SettingsVisualCheck {
         size: CGSize,
         outputPath: String,
         expectedBackgroundTypeLabel: String? = nil,
-        expectsPreviewAudioToggle: Bool? = nil
+        expectsPreviewAudioToggle: Bool? = nil,
+        additionalRequiredIdentifiers: Set<String> = [],
+        scrollFraction: Double? = nil
     ) throws -> SettingsRenderReport {
         let identifiers = AccessibilityIdentifierStore()
         let labels = AccessibilityLabelStore()
@@ -418,6 +496,31 @@ enum SettingsVisualCheck {
             )
             expect(labels.values.contains("重新检测设备能力"))
         }
+        if page == .alerts {
+            let requiredIdentifiers: Set<String> = [
+                "settings-section-alerts-2",
+                "settings-threshold-color-level1-system",
+                "settings-threshold-color-level1-picker",
+                "settings-threshold-color-level2-picker",
+                "settings-threshold-color-level3-picker",
+                "settings-threshold-colors-reset",
+                "settings-threshold-preview-level1",
+                "settings-threshold-preview-level2",
+                "settings-threshold-preview-level3"
+            ]
+            let missingIdentifiers = requiredIdentifiers.subtracting(identifiers.values)
+            guard missingIdentifiers.isEmpty else {
+                fatalError("Missing alert identifiers: \(missingIdentifiers.sorted())")
+            }
+            expect(labels.values.contains("恢复推荐颜色"))
+        }
+        let missingAdditionalIdentifiers = additionalRequiredIdentifiers
+            .subtracting(identifiers.values)
+        guard missingAdditionalIdentifiers.isEmpty else {
+            fatalError(
+                "Missing fixture identifiers: \(missingAdditionalIdentifiers.sorted())"
+            )
+        }
 
         // The first configuration owns only the initial default. A later user
         // resize must survive activation and resize-driven reconfiguration.
@@ -451,19 +554,35 @@ enum SettingsVisualCheck {
         hostingView.layoutSubtreeIfNeeded()
         RunLoop.main.run(until: Date().addingTimeInterval(0.1))
         expect(window.contentView?.bounds.size == size)
+        var pageScrollView: NSScrollView?
         if page.requiresScrolling {
             let scrollViews = descendants(of: hostingView).compactMap { $0 as? NSScrollView }
-            guard let pageScrollView = scrollViews.max(by: {
+            guard let resolvedPageScrollView = scrollViews.max(by: {
                 $0.bounds.width * $0.bounds.height < $1.bounds.width * $1.bounds.height
             }) else {
                 fatalError("Missing settings page scroll view")
             }
-            let frameInHostingView = pageScrollView.convert(
-                pageScrollView.bounds,
+            pageScrollView = resolvedPageScrollView
+            let frameInHostingView = resolvedPageScrollView.convert(
+                resolvedPageScrollView.bounds,
                 to: hostingView
             )
             expect(abs(frameInHostingView.maxX - hostingView.bounds.maxX) < 0.5)
-            expect(pageScrollView.verticalScroller is SettingsThinScroller)
+            expect(resolvedPageScrollView.verticalScroller is SettingsThinScroller)
+        }
+        if let scrollFraction {
+            guard let pageScrollView, let documentView = pageScrollView.documentView else {
+                fatalError("Missing scrollable settings document")
+            }
+            let maximumY = max(
+                0,
+                documentView.bounds.height - pageScrollView.contentView.bounds.height
+            )
+            pageScrollView.contentView.scroll(
+                to: NSPoint(x: 0, y: maximumY * min(max(scrollFraction, 0), 1))
+            )
+            pageScrollView.reflectScrolledClipView(pageScrollView.contentView)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
         }
 
         // This PNG intentionally caches only SwiftUI content. Actual traffic

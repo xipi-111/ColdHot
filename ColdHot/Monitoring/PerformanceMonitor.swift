@@ -20,9 +20,7 @@ final class PerformanceMonitor: ObservableObject {
     private var enabledDetails: Set<MetricDetail>
     private var samplingExpandedMetric: MetricKind?
     private var thresholdRules: [ThresholdMetric: ThresholdRule]
-    private var thresholdStates: [ThresholdMetric: ThresholdTriggerState] = [:]
-    private var alertOrder: [ThresholdMetric] = []
-    private var alertRotationIndex = 0
+    private var thresholdPresentation = ThresholdAlertPresentationState()
     private var lastBackgroundDetailSampleAt = Date.distantPast
     private var trendHistoryStorage: [MetricKind: [MetricTrendPoint]] = [:]
     private var previousSelfResourceCounters: SelfResourceCounters?
@@ -161,7 +159,7 @@ final class PerformanceMonitor: ObservableObject {
         })
         let detailThresholdKinds = enabledThresholdKinds.filter { $0.requiredDetail != nil }
         let activeDetailKinds = detailThresholdKinds.filter {
-            thresholdStates[$0]?.isActive == true
+            thresholdPresentation.isActive($0)
         }
         let isBackgroundDetailSampleDue = !detailThresholdKinds.isEmpty
             && now.timeIntervalSince(lastBackgroundDetailSampleAt) >= 5
@@ -194,13 +192,11 @@ final class PerformanceMonitor: ObservableObject {
             with: newSnapshot,
             evaluatedKinds: evaluatedKinds
         )
-        let alerts = currentAlerts()
+        let alerts = thresholdPresentation.alerts(using: thresholdRules)
         if membershipChanged || resetAlertRotation {
             restartAlertRotation(alertCount: alerts.count)
         }
-        let visibleAlert = alerts.isEmpty
-            ? nil
-            : alerts[min(alertRotationIndex, alerts.count - 1)]
+        let visibleAlert = thresholdPresentation.visibleAlert(using: thresholdRules)
         let updatedTrendHistory = updateTrendHistory(
             with: newSnapshot,
             metrics: request.enabledMetrics.union(request.backgroundMetrics),
@@ -223,15 +219,8 @@ final class PerformanceMonitor: ObservableObject {
         let changedKinds = Set(ThresholdMetric.allCases.filter {
             thresholdRules[$0] != rules[$0]
         })
-        let removedActiveAlert = changedKinds.contains {
-            thresholdStates[$0]?.isActive == true
-        }
         thresholdRules = rules
-
-        for kind in changedKinds {
-            thresholdStates.removeValue(forKey: kind)
-            alertOrder.removeAll { $0 == kind }
-        }
+        let removedActiveAlert = thresholdPresentation.remove(changedKinds)
         if changedKinds.contains(where: { $0.requiredDetail != nil }) {
             lastBackgroundDetailSampleAt = .distantPast
         }
@@ -241,17 +230,16 @@ final class PerformanceMonitor: ObservableObject {
     private func restartAlertRotation(alertCount: Int) {
         alertRotationTimer?.cancel()
         alertRotationTimer = nil
-        alertRotationIndex = 0
+        thresholdPresentation.resetRotation()
 
         guard alertCount > 1 else { return }
         let newTimer = DispatchSource.makeTimerSource(queue: queue)
         newTimer.schedule(deadline: .now() + 5, repeating: 5, leeway: .milliseconds(100))
         newTimer.setEventHandler { [weak self] in
             guard let self else { return }
-            let alerts = self.currentAlerts()
-            guard alerts.count > 1 else { return }
-            self.alertRotationIndex = (self.alertRotationIndex + 1) % alerts.count
-            let visibleAlert = alerts[self.alertRotationIndex]
+            guard let visibleAlert = self.thresholdPresentation.advanceRotation(
+                using: self.thresholdRules
+            ) else { return }
             DispatchQueue.main.async { [weak self] in
                 self?.visibleThresholdAlert = visibleAlert
             }
@@ -264,44 +252,32 @@ final class PerformanceMonitor: ObservableObject {
         with snapshot: PerformanceSnapshot,
         evaluatedKinds: Set<ThresholdMetric>
     ) -> Bool {
-        var membershipChanged = false
-        var activatedKinds: [ThresholdMetric] = []
-
-        for kind in ThresholdMetric.allCases where evaluatedKinds.contains(kind) {
+        let evaluations = ThresholdMetric.allCases.compactMap { kind -> ThresholdEvaluation? in
+            guard evaluatedKinds.contains(kind) else { return nil }
             guard let rule = thresholdRules[kind], rule.isEnabled,
-                  let measurement = kind.measurement(from: snapshot) else { continue }
-
-            var state = thresholdStates[kind] ?? ThresholdTriggerState()
-            let transition = state.update(kind: kind, rule: rule, measurement: measurement)
-            if transition == .activated {
-                activatedKinds.append(kind)
-                membershipChanged = true
+                  let measurement = kind.measurement(from: snapshot) else { return nil }
+            return ThresholdEvaluation(kind: kind, rule: rule, measurement: measurement)
+        }
+        let update = thresholdPresentation.update(evaluations)
+        for change in update.changes {
+            if change.transition == .activated {
                 if notificationsEnabled {
                     notificationController.sendActivated(
-                        kind: kind,
-                        measurement: measurement,
-                        threshold: rule.value
+                        kind: change.kind,
+                        measurement: change.measurement,
+                        threshold: change.thresholdValue
                     )
                 }
-            } else if transition == .recovered {
-                alertOrder.removeAll { $0 == kind }
-                membershipChanged = true
+            } else if change.transition == .recovered {
                 if notificationsEnabled && recoveryNotificationsEnabled {
                     notificationController.sendRecovered(
-                        kind: kind,
-                        measurement: measurement
+                        kind: change.kind,
+                        measurement: change.measurement
                     )
                 }
             }
-
-            thresholdStates[kind] = state
         }
-
-        for kind in activatedKinds.reversed() {
-            alertOrder.removeAll { $0 == kind }
-            alertOrder.insert(kind, at: 0)
-        }
-        return membershipChanged
+        return update.membershipChanged
     }
 
     private func updateTrendHistory(
@@ -409,20 +385,6 @@ final class PerformanceMonitor: ObservableObject {
         )
     }
 
-    private func currentAlerts() -> [ThresholdAlert] {
-        alertOrder.compactMap { kind in
-            guard let state = thresholdStates[kind], state.isActive,
-                  let measurement = state.latestMeasurement,
-                  let activatedAt = state.activatedAt,
-                  let rule = thresholdRules[kind] else { return nil }
-            return ThresholdAlert(
-                kind: kind,
-                measurement: measurement,
-                thresholdValue: rule.value,
-                activatedAt: activatedAt
-            )
-        }
-    }
 }
 
 private struct SelfResourceCounters {

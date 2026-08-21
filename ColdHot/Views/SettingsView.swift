@@ -143,6 +143,7 @@ struct SettingsPreviewAudioToggle: View {
 
 struct SettingsView: View {
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+    @Environment(\.colorScheme) private var colorScheme
     @ObservedObject var settings: MonitorSettings
     @ObservedObject var panelBackgroundStore: PanelBackgroundStore
     @ObservedObject var monitor: PerformanceMonitor
@@ -152,6 +153,7 @@ struct SettingsView: View {
     @State private var selectedPage: SettingsPage = .appearance
     @State private var expandedMetrics: Set<MetricKind> = []
     @State private var expandedThresholdMetrics: Set<MetricKind> = []
+    @State private var expandedThresholdTiers: Set<ThresholdMetric> = []
     @State private var showsPrivacyPolicy = false
     @State private var isChoosingBackground = false
     @State private var backgroundErrorMessage: String?
@@ -165,6 +167,8 @@ struct SettingsView: View {
         monitor: PerformanceMonitor,
         updateController: UpdateController,
         initialPage: SettingsPage = .appearance,
+        initialExpandedThresholdMetrics: Set<MetricKind> = [],
+        initialExpandedThresholdTiers: Set<ThresholdMetric> = [],
         previewSession: SettingsPanelBackgroundPreviewSession? = nil,
         backgroundOperationState: SettingsBackgroundOperationState? = nil,
         reduceMotionOverride: Bool? = nil
@@ -174,6 +178,8 @@ struct SettingsView: View {
         self.monitor = monitor
         self.updateController = updateController
         _selectedPage = State(initialValue: initialPage)
+        _expandedThresholdMetrics = State(initialValue: initialExpandedThresholdMetrics)
+        _expandedThresholdTiers = State(initialValue: initialExpandedThresholdTiers)
         _previewSession = StateObject(
             wrappedValue: previewSession
                 ?? SettingsPanelBackgroundPreviewSession(initialPage: initialPage)
@@ -489,9 +495,50 @@ struct SettingsView: View {
             }
 
             SettingsSectionSurface(
+                "提醒等级颜色",
+                accessibilityIdentifier: "settings-section-alerts-1"
+            ) {
+                thresholdColorRow(.level1)
+                SettingsSectionDivider()
+                thresholdColorRow(.level2)
+                SettingsSectionDivider()
+                thresholdColorRow(.level3)
+                SettingsSectionDivider()
+                SettingsRow {
+                    HStack(spacing: 16) {
+                        Text("菜单栏预览")
+                        Spacer()
+                        ForEach(ThresholdSeverity.allCases) { severity in
+                            VStack(spacing: 3) {
+                                Image(nsImage: thresholdPreviewImage(for: severity))
+                                Text(severity.title)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .frame(minWidth: 52)
+                            .settingsAccessibilityIdentifier(
+                                "settings-threshold-preview-level\(severity.rawValue)"
+                            )
+                        }
+                    }
+                }
+                SettingsSectionDivider()
+                SettingsRow {
+                    HStack {
+                        Spacer()
+                        Button("恢复推荐颜色") {
+                            settings.restoreRecommendedThresholdColors()
+                        }
+                        .settingsAccessibilityIdentifier("settings-threshold-colors-reset")
+                        .settingsAccessibilityLabel("恢复推荐颜色")
+                    }
+                }
+            }
+
+            SettingsSectionSurface(
                 "菜单栏阈值显示",
                 footer: "连续 2 次达到阈值后显示；连续 3 次回落后恢复。多个告警每 5 秒轮换。",
-                accessibilityIdentifier: "settings-section-alerts-1"
+                accessibilityIdentifier: "settings-section-alerts-2"
             ) {
                 ForEach(thresholdParentMetrics) { metric in
                     SettingsRow {
@@ -1329,33 +1376,72 @@ struct SettingsView: View {
 
     private func thresholdSetting(_ kind: ThresholdMetric) -> some View {
         let rule = settings.thresholdRule(for: kind)
-        return HStack(alignment: .center, spacing: 9) {
-            Toggle("", isOn: thresholdEnabledBinding(kind))
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .accessibilityLabel("启用\(kind.title)阈值")
+        return VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .center, spacing: 9) {
+                Toggle("", isOn: thresholdEnabledBinding(kind))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .accessibilityLabel("启用\(kind.title)阈值")
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(kind.title)
-                    .font(.system(size: 12))
-                Text(kind.explanation)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(kind.title)
+                        .font(.system(size: 12))
+                    Text(kind.explanation)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+
+                Spacer(minLength: 10)
+
+                thresholdEditor(kind, severity: .level1)
+                    .disabled(!rule.isEnabled)
+                    .opacity(rule.isEnabled ? 1 : 0.45)
             }
 
-            Spacer(minLength: 10)
-
-            thresholdEditor(kind)
+            if kind == .thermalState {
+                HStack(spacing: 6) {
+                    Text("固定映射")
+                    Text("偏热 → 一级")
+                    Text("较热 → 二级")
+                    Text("严重 → 三级")
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 31)
+                .settingsAccessibilityIdentifier(
+                    "settings-threshold-thermalState-fixed-mapping"
+                )
+                .settingsAccessibilityLabel("热状态固定三级映射")
+            } else {
+                DisclosureGroup(isExpanded: thresholdTierDisclosureBinding(kind)) {
+                    HStack(spacing: 18) {
+                        thresholdTierEditor(kind, severity: .level2)
+                        thresholdTierEditor(kind, severity: .level3)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.leading, 31)
+                    .padding(.top, 5)
+                } label: {
+                    Text("分档设置")
+                        .font(.caption)
+                }
                 .disabled(!rule.isEnabled)
                 .opacity(rule.isEnabled ? 1 : 0.45)
+                .padding(.leading, 31)
+                .settingsAccessibilityIdentifier("settings-threshold-tiers-\(kind.rawValue)")
+                .settingsAccessibilityLabel("分档设置")
+            }
         }
     }
 
     @ViewBuilder
-    private func thresholdEditor(_ kind: ThresholdMetric) -> some View {
+    private func thresholdEditor(
+        _ kind: ThresholdMetric,
+        severity: ThresholdSeverity
+    ) -> some View {
         if kind == .thermalState {
-            Picker("", selection: thresholdValueBinding(kind)) {
+            Picker("", selection: thresholdValueBinding(kind, severity: .level1)) {
                 Text("偏热").tag(1.0)
                 Text("较热").tag(2.0)
                 Text("严重").tag(3.0)
@@ -1365,14 +1451,18 @@ struct SettingsView: View {
         } else {
             HStack(spacing: 4) {
                 TextField(
-                    "阈值",
-                    value: thresholdValueBinding(kind),
+                    severity.title,
+                    value: thresholdValueBinding(kind, severity: severity),
                     format: .number.precision(.fractionLength(0...1))
                 )
                 .textFieldStyle(.roundedBorder)
                 .multilineTextAlignment(.trailing)
                 .frame(width: 68)
-                .accessibilityLabel("\(kind.title)阈值")
+                .accessibilityLabel("\(kind.title)\(severity.title)阈值")
+                .settingsAccessibilityIdentifier(
+                    "settings-threshold-\(kind.rawValue)-level\(severity.rawValue)"
+                )
+                .settingsAccessibilityLabel("\(kind.title)\(severity.title)阈值")
 
                 Text(kind.unit)
                     .font(.caption)
@@ -1380,6 +1470,75 @@ struct SettingsView: View {
                     .frame(minWidth: 28, alignment: .leading)
             }
         }
+    }
+
+    private func thresholdTierEditor(
+        _ kind: ThresholdMetric,
+        severity: ThresholdSeverity
+    ) -> some View {
+        HStack(spacing: 6) {
+            Text(severity.title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            thresholdEditor(kind, severity: severity)
+        }
+    }
+
+    private func thresholdColorRow(_ severity: ThresholdSeverity) -> some View {
+        SettingsRow {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(severity.title)
+                    Text(thresholdColorExplanation(severity))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if severity == .level1 {
+                    Toggle("跟随系统", isOn: levelOneFollowsSystemBinding)
+                        .toggleStyle(.checkbox)
+                        .settingsAccessibilityIdentifier(
+                            "settings-threshold-color-level1-system"
+                        )
+                }
+                ColorPicker(
+                    "\(severity.title)颜色",
+                    selection: thresholdColorBinding(severity),
+                    supportsOpacity: true
+                )
+                .labelsHidden()
+                .disabled(severity == .level1 && settings.thresholdSeverityColors.level1Custom == nil)
+                .opacity(
+                    severity == .level1 && settings.thresholdSeverityColors.level1Custom == nil
+                        ? 0.45
+                        : 1
+                )
+                .settingsAccessibilityIdentifier(
+                    "settings-threshold-color-level\(severity.rawValue)-picker"
+                )
+            }
+        }
+    }
+
+    private func thresholdColorExplanation(_ severity: ThresholdSeverity) -> String {
+        switch severity {
+        case .level1: "刚达到阈值 · Semibold"
+        case .level2: "明显超出 · Bold"
+        case .level3: "严重超出 · Heavy"
+        }
+    }
+
+    private func thresholdPreviewImage(for severity: ThresholdSeverity) -> NSImage {
+        MenuBarStatusRenderer.alertImage(
+            measurement: ThresholdMeasurement(
+                rawValue: 94,
+                valueText: "94°",
+                objectLabel: "CPU"
+            ),
+            severity: severity,
+            colors: settings.thresholdSeverityColors,
+            appearance: settingsAppearance
+        )
     }
 
     private func metricBinding(_ metric: MetricKind) -> Binding<Bool> {
@@ -1403,11 +1562,73 @@ struct SettingsView: View {
         )
     }
 
-    private func thresholdValueBinding(_ kind: ThresholdMetric) -> Binding<Double> {
+    private func thresholdValueBinding(
+        _ kind: ThresholdMetric,
+        severity: ThresholdSeverity
+    ) -> Binding<Double> {
         Binding(
-            get: { settings.thresholdRule(for: kind).value },
-            set: { settings.setThresholdValue($0, for: kind) }
+            get: {
+                let rule = settings.thresholdRule(for: kind)
+                switch severity {
+                case .level1: return rule.value
+                case .level2: return rule.level2Value
+                case .level3: return rule.level3Value
+                }
+            },
+            set: { settings.setThresholdValue($0, for: kind, severity: severity) }
         )
+    }
+
+    private var levelOneFollowsSystemBinding: Binding<Bool> {
+        Binding(
+            get: { settings.thresholdSeverityColors.level1Custom == nil },
+            set: {
+                settings.setLevelOneThresholdColorFollowsSystem(
+                    $0,
+                    fallbackColor: adaptiveThresholdColorComponents
+                )
+            }
+        )
+    }
+
+    private func thresholdColorBinding(_ severity: ThresholdSeverity) -> Binding<Color> {
+        Binding(
+            get: {
+                let components: ThresholdColorComponents
+                switch severity {
+                case .level1:
+                    components = settings.thresholdSeverityColors.level1Custom
+                        ?? adaptiveThresholdColorComponents
+                case .level2:
+                    components = settings.thresholdSeverityColors.level2
+                case .level3:
+                    components = settings.thresholdSeverityColors.level3
+                }
+                return Color(
+                    .sRGB,
+                    red: components.red,
+                    green: components.green,
+                    blue: components.blue,
+                    opacity: components.alpha
+                )
+            },
+            set: { color in
+                settings.setThresholdColor(
+                    MenuBarStatusRenderer.colorComponents(from: NSColor(color)),
+                    for: severity
+                )
+            }
+        )
+    }
+
+    private var adaptiveThresholdColorComponents: ThresholdColorComponents {
+        colorScheme == .dark
+            ? ThresholdColorComponents(red: 1, green: 1, blue: 1, alpha: 1)
+            : ThresholdColorComponents(red: 0, green: 0, blue: 0, alpha: 1)
+    }
+
+    private var settingsAppearance: NSAppearance {
+        NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua)!
     }
 
     private func disclosureBinding(_ metric: MetricKind) -> Binding<Bool> {
@@ -1431,6 +1652,19 @@ struct SettingsView: View {
                     expandedThresholdMetrics.insert(metric)
                 } else {
                     expandedThresholdMetrics.remove(metric)
+                }
+            }
+        )
+    }
+
+    private func thresholdTierDisclosureBinding(_ kind: ThresholdMetric) -> Binding<Bool> {
+        Binding(
+            get: { expandedThresholdTiers.contains(kind) },
+            set: { expanded in
+                if expanded {
+                    expandedThresholdTiers.insert(kind)
+                } else {
+                    expandedThresholdTiers.remove(kind)
                 }
             }
         )
