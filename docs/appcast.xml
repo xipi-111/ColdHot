@@ -1,9 +1,27 @@
-<?xml version="1.0" encoding="utf-8"?>
-<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
-  <channel>
-    <title>ColdHot 更新</title>
-    <link>https://github.com/xipi-111/ColdHot</link>
-    <description>ColdHot 官网版安全更新</description>
-    <language>zh-CN</language>
-  </channel>
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>ColdHot 更新</title>
+        <link>https://github.com/xipi-111/ColdHot</link>
+        <description>ColdHot 官网版安全更新</description>
+        <language>zh-CN</language>
+        <item>
+            <title>1.5.0</title>
+            <pubDate>Thu, 20 Aug 2026 22:14:24 -0700</pubDate>
+            <link>https://github.com/xipi-111/ColdHot</link>
+            <sparkle:version>22</sparkle:version>
+            <sparkle:shortVersionString>1.5.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description sparkle:format="markdown"><![CDATA[# ColdHot 1.5.0
+
+- 菜单栏默认图标改为克制、稳定的脉冲峰谷轮廓，并适配明暗菜单栏。
+- 阈值显示新增三级严重程度：一级跟随系统，二级黄色，三级红色；颜色均可在设置中调整。
+- 每项监控指标支持独立设置一级、二级和三级阈值，并保留原有连续触发、迟滞恢复与多告警轮换逻辑。
+- 自定义菜单背景支持静态图片、GIF、MP4、MOV、M4V 和系统可播放视频，动态内容仅在可见时播放。
+- 设置窗口完成布局与预览优化，背景裁切、可读性、声音和“减少动态效果”状态可直接确认。
+- 修正进程 CPU 与内存统计口径，并加强动态背景事务存储、失败回滚和资源清理。
+]]></description>
+            <enclosure url="https://github.com/xipi-111/ColdHot/releases/download/v1.5.0/ColdHot-Direct-1.5.0-22.dmg" length="3719991" type="application/octet-stream" sparkle:edSignature="11vISuIJiWHvXayqQMtf4f8X7IMmchkJA9a7ozuHZ2ZLCOnXhp59laN85hN73FAAx9y2aw3kKQoX3Z1eofAzCA=="/>
+        </item>
+    </channel>
 </rss>
