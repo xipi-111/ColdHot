@@ -146,7 +146,8 @@ struct SettingsView: View {
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject var settings: MonitorSettings
     @ObservedObject var panelBackgroundStore: PanelBackgroundStore
-    @ObservedObject var monitor: PerformanceMonitor
+    private let monitor: PerformanceMonitor
+    @ObservedObject private var settingsPerformance: SettingsPerformanceProjection
     @ObservedObject var updateController: UpdateController
     @StateObject private var previewSession: SettingsPanelBackgroundPreviewSession
     @StateObject private var backgroundOperationState: SettingsBackgroundOperationState
@@ -176,6 +177,7 @@ struct SettingsView: View {
         self.settings = settings
         self.panelBackgroundStore = panelBackgroundStore
         self.monitor = monitor
+        _settingsPerformance = ObservedObject(wrappedValue: monitor.settingsProjection)
         self.updateController = updateController
         _selectedPage = State(initialValue: initialPage)
         _expandedThresholdMetrics = State(initialValue: initialExpandedThresholdMetrics)
@@ -233,6 +235,7 @@ struct SettingsView: View {
             Text("请在系统设置的通知页面允许 ColdHot 发送通知。")
         }
         .onAppear {
+            monitor.setSettingsMonitoringActive(selectedPage == .about)
             previewSession.didAppear(
                 asset: panelBackgroundStore.asset,
                 isEnabled: settings.isPanelBackgroundEnabled,
@@ -240,9 +243,11 @@ struct SettingsView: View {
             )
         }
         .onDisappear {
+            monitor.setSettingsMonitoringActive(false)
             previewSession.didDisappear()
         }
         .onChange(of: selectedPage) { _, page in
+            monitor.setSettingsMonitoringActive(page == .about)
             previewSession.didSelectPage(
                 page,
                 asset: panelBackgroundStore.asset,
@@ -683,11 +688,11 @@ struct SettingsView: View {
                     }
                 ) {
                     SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
-                        capabilityRow("GPU 实时读数", available: monitor.snapshot.gpu.usage != nil)
+                        capabilityRow("GPU 实时读数", available: settingsPerformance.snapshot.gpu.usage != nil)
                     }
                     SettingsSectionDivider()
                     SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
-                        capabilityRow("风扇转速", available: !monitor.snapshot.fans.isEmpty)
+                        capabilityRow("风扇转速", available: !settingsPerformance.snapshot.fans.isEmpty)
                     }
                     SettingsSectionDivider()
                     SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
@@ -697,7 +702,7 @@ struct SettingsView: View {
                     SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
                         capabilityRow(
                             "系统功率",
-                            available: monitor.snapshot.battery?.systemPowerWatts != nil
+                            available: settingsPerformance.snapshot.battery?.systemPowerWatts != nil
                         )
                     }
                 }
@@ -710,7 +715,7 @@ struct SettingsView: View {
                     SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
                         settingsValueRow(
                             "CPU（整机）",
-                            value: monitor.selfResourceSnapshot.cpuUsage.formatted(
+                            value: settingsPerformance.selfResourceSnapshot.cpuUsage.formatted(
                                 .number.precision(.fractionLength(1))
                             ) + "%"
                         )
@@ -723,7 +728,7 @@ struct SettingsView: View {
                     SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
                         settingsValueRow(
                             "唤醒",
-                            value: monitor.selfResourceSnapshot.wakeupsPerSecond.formatted(
+                            value: settingsPerformance.selfResourceSnapshot.wakeupsPerSecond.formatted(
                                 .number.precision(.fractionLength(1))
                             ) + " 次/秒"
                         )
@@ -731,7 +736,6 @@ struct SettingsView: View {
                 }
             }
         }
-        .onAppear { monitor.probeCapabilities() }
     }
 
     @ViewBuilder
@@ -1094,7 +1098,7 @@ struct SettingsView: View {
     }
 
     private var hasTemperatureReading: Bool {
-        let temperatures = monitor.snapshot.thermal.temperatures
+        let temperatures = settingsPerformance.snapshot.thermal.temperatures
         return temperatures.cpu != nil
             || temperatures.gpu != nil
             || temperatures.memory != nil
@@ -1108,7 +1112,7 @@ struct SettingsView: View {
 
     private var selfMemoryText: String {
         ByteCountFormatter.string(
-            fromByteCount: Int64(clamping: monitor.selfResourceSnapshot.memoryBytes),
+            fromByteCount: Int64(clamping: settingsPerformance.selfResourceSnapshot.memoryBytes),
             countStyle: .memory
         )
     }

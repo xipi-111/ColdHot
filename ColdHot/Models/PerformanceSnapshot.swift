@@ -16,6 +16,51 @@ struct PerformanceSnapshot {
     var topDiskProcesses: [ProcessActivity] = []
 
     static let empty = PerformanceSnapshot()
+
+    func merging(
+        _ update: PerformanceSnapshot,
+        request: SamplingRequest
+    ) -> PerformanceSnapshot {
+        var merged = self
+        merged.timestamp = update.timestamp
+        if request.includes(.cpu) {
+            merged.cpu = update.cpu
+        }
+        if request.includes(.gpu) {
+            merged.gpu = update.gpu
+        }
+        if request.includes(.memory) {
+            merged.memory = update.memory
+        }
+        if request.includes(.network) {
+            merged.network = update.network
+        }
+        if request.includes(.disk) {
+            merged.disk = update.disk
+        }
+        if request.includes(.thermal) {
+            merged.thermal = update.thermal
+        }
+        if request.includesFans {
+            merged.fans = update.fans
+        }
+        if request.includes(.battery) {
+            merged.battery = update.battery
+        }
+        if request.includes(.cpuProcesses) {
+            merged.topCPUProcesses = update.topCPUProcesses
+        }
+        if request.includes(.cpuWakeups) {
+            merged.topWakeupProcesses = update.topWakeupProcesses
+        }
+        if request.includes(.memoryProcesses) {
+            merged.topMemoryProcesses = update.topMemoryProcesses
+        }
+        if request.includes(.diskProcesses) {
+            merged.topDiskProcesses = update.topDiskProcesses
+        }
+        return merged
+    }
 }
 
 struct MetricTrendPoint: Identifiable, Equatable {

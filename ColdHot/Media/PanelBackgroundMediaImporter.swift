@@ -417,11 +417,11 @@ struct PanelBackgroundMediaImporter {
         guard let source = CGImageSourceCreateWithURL(
             url as CFURL,
             [kCGImageSourceShouldCache: false] as CFDictionary
-        ), let typeIdentifier = CGImageSourceGetType(source),
-              let type = UTType(typeIdentifier as String),
-              type.conforms(to: .image) else {
+        ), CGImageSourceGetCount(source) > 0,
+           let typeIdentifier = CGImageSourceGetType(source) else {
             return nil
         }
+        let type = UTType(typeIdentifier as String) ?? .image
         return ResolvedMediaType(
             type: type,
             category: type.conforms(to: .gif) ? .gif : .image

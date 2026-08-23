@@ -442,6 +442,11 @@ enum PanelBackgroundCheck {
         let storedURL = try committedMediaURL(in: storeDirectory)
         let storedPixelSize = try pixelSize(of: storedURL)
         expect(storedPixelSize == CGSize(width: 1_600, height: 800))
+        guard let decodedPosterSize = store.image?.size else {
+            fatalError("Imported background should expose a decoded poster")
+        }
+        expect(max(decodedPosterSize.width, decodedPosterSize.height) <= 960)
+        expect(abs(decodedPosterSize.width / decodedPosterSize.height - 2) < 0.001)
 
         let smallSourceURL = rootDirectory.appendingPathComponent("small-source.png")
         try writeTestPNG(

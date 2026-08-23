@@ -6,6 +6,23 @@
         <description>ColdHot 官网版安全更新</description>
         <language>zh-CN</language>
         <item>
+            <title>1.5.1</title>
+            <pubDate>Sun, 23 Aug 2026 00:07:35 -0700</pubDate>
+            <link>https://github.com/xipi-111/ColdHot</link>
+            <sparkle:version>25</sparkle:version>
+            <sparkle:shortVersionString>1.5.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description sparkle:format="markdown"><![CDATA[# ColdHot 1.5.1
+
+- 优化菜单收起时的发布与采样路径，减少不必要的 SwiftUI 刷新、传感器读取和系统唤醒。
+- GPU、磁盘、风扇、温度与电池改为按可见状态、阈值需求和独立周期采样；打开菜单时仍会立即刷新。
+- 限制菜单背景封面的常驻解码尺寸，降低使用高分辨率图片或动态背景时的内存占用。
+- 动态背景取消打开瞬间的静态封面闪烁：播放准备期间使用完整遮罩，首帧就绪后平滑淡入。
+- 菜单关闭后暂停动态背景播放与解码，并保留“减少动态效果”、声音控制和失败回滚行为。
+]]></description>
+            <enclosure url="https://github.com/xipi-111/ColdHot/releases/download/v1.5.1/ColdHot-Direct-1.5.1-25.dmg" length="3756647" type="application/octet-stream" sparkle:edSignature="XHC0m8RAbJfGt/aOwKRScm/ZxSGRBp5w4pZ12c+lgV0Jp/vnZg8oJjC/e2p3dhO5LvuwZoNG61LZs6JAFRIJCQ=="/>
+        </item>
+        <item>
             <title>1.5.0</title>
             <pubDate>Thu, 20 Aug 2026 22:14:24 -0700</pubDate>
             <link>https://github.com/xipi-111/ColdHot</link>

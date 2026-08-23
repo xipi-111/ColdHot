@@ -109,11 +109,16 @@ final class UpdateController: ObservableObject {
 
 private struct MenuBarStatusLabel: View {
     @Environment(\.colorScheme) private var colorScheme
-    @ObservedObject var monitor: PerformanceMonitor
+    @ObservedObject private var performance: MenuBarPerformanceProjection
     @ObservedObject var settings: MonitorSettings
 
+    init(monitor: PerformanceMonitor, settings: MonitorSettings) {
+        _performance = ObservedObject(wrappedValue: monitor.menuBarProjection)
+        self.settings = settings
+    }
+
     var body: some View {
-        if let alert = monitor.visibleThresholdAlert {
+        if let alert = performance.visibleThresholdAlert {
             Image(
                 nsImage: MenuBarStatusRenderer.alertImage(
                     measurement: alert.measurement,

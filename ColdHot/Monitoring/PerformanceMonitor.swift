@@ -3,25 +3,112 @@ import Combine
 import Darwin
 import UserNotifications
 
-final class PerformanceMonitor: ObservableObject {
-    @Published private(set) var snapshot = PerformanceSnapshot.empty
-    @Published private(set) var expandedMetric: MetricKind?
-    @Published private(set) var activeThresholdAlerts: [ThresholdAlert] = []
+struct PerformancePresentationState {
+    var snapshot: PerformanceSnapshot
+    var expandedMetric: MetricKind?
+    var activeThresholdAlerts: [ThresholdAlert]
+    var visibleThresholdAlert: ThresholdAlert?
+    var trendHistory: [MetricKind: [MetricTrendPoint]]
+
+    static let empty = PerformancePresentationState(
+        snapshot: .empty,
+        expandedMetric: nil,
+        activeThresholdAlerts: [],
+        visibleThresholdAlert: nil,
+        trendHistory: [:]
+    )
+}
+
+final class PanelPerformanceProjection: ObservableObject {
+    @Published private(set) var state = PerformancePresentationState.empty
+    private(set) var isVisible = false
+
+    var snapshot: PerformanceSnapshot { state.snapshot }
+    var expandedMetric: MetricKind? { state.expandedMetric }
+    var activeThresholdAlerts: [ThresholdAlert] { state.activeThresholdAlerts }
+    var visibleThresholdAlert: ThresholdAlert? { state.visibleThresholdAlert }
+    var trendHistory: [MetricKind: [MetricTrendPoint]] { state.trendHistory }
+
+    func setVisible(_ visible: Bool, latest: PerformancePresentationState) {
+        guard visible != isVisible else { return }
+        isVisible = visible
+        if visible { state = latest }
+    }
+
+    func publish(_ latest: PerformancePresentationState) {
+        guard isVisible else { return }
+        state = latest
+    }
+}
+
+final class MenuBarPerformanceProjection: ObservableObject {
     @Published private(set) var visibleThresholdAlert: ThresholdAlert?
-    @Published private(set) var trendHistory: [MetricKind: [MetricTrendPoint]] = [:]
-    @Published private(set) var selfResourceSnapshot = SelfResourceSnapshot()
+
+    func publish(_ alert: ThresholdAlert?) {
+        guard visibleThresholdAlert != alert else { return }
+        visibleThresholdAlert = alert
+    }
+}
+
+struct SettingsPerformanceState {
+    var snapshot: PerformanceSnapshot
+    var selfResource: SelfResourceSnapshot
+
+    static let empty = SettingsPerformanceState(
+        snapshot: .empty,
+        selfResource: SelfResourceSnapshot()
+    )
+}
+
+final class SettingsPerformanceProjection: ObservableObject {
+    @Published private(set) var state = SettingsPerformanceState.empty
+    private(set) var isActive = false
+
+    var snapshot: PerformanceSnapshot { state.snapshot }
+    var selfResourceSnapshot: SelfResourceSnapshot { state.selfResource }
+
+    func setActive(_ active: Bool, latest: SettingsPerformanceState) {
+        guard active != isActive else { return }
+        isActive = active
+        if active { state = latest }
+    }
+
+    func publish(_ latest: SettingsPerformanceState) {
+        guard isActive else { return }
+        state = latest
+    }
+}
+
+final class PerformanceMonitor: ObservableObject {
+    let panelProjection = PanelPerformanceProjection()
+    let menuBarProjection = MenuBarPerformanceProjection()
+    let settingsProjection = SettingsPerformanceProjection()
+
+    var snapshot: PerformanceSnapshot { panelProjection.snapshot }
+    var expandedMetric: MetricKind? { panelProjection.expandedMetric }
+    var activeThresholdAlerts: [ThresholdAlert] { panelProjection.activeThresholdAlerts }
+    var visibleThresholdAlert: ThresholdAlert? { menuBarProjection.visibleThresholdAlert }
+    var trendHistory: [MetricKind: [MetricTrendPoint]] { panelProjection.trendHistory }
+    var selfResourceSnapshot: SelfResourceSnapshot {
+        settingsProjection.selfResourceSnapshot
+    }
 
     private let queue = DispatchQueue(label: "com.xipiyoung.ColdHot.sampler", qos: .utility)
     private let sampler = SystemSampler()
+    private let sampleProvider: ((SamplingRequest) -> PerformanceSnapshot)?
     private var timer: DispatchSourceTimer?
     private var alertRotationTimer: DispatchSourceTimer?
+    private var expandedRefreshWorkItem: DispatchWorkItem?
     private var cancellables = Set<AnyCancellable>()
     private var enabledMetrics: Set<MetricKind>
     private var enabledDetails: Set<MetricDetail>
     private var samplingExpandedMetric: MetricKind?
     private var thresholdRules: [ThresholdMetric: ThresholdRule]
     private var thresholdPresentation = ThresholdAlertPresentationState()
-    private var lastBackgroundDetailSampleAt = Date.distantPast
+    private var cadencePlanner = SamplingCadencePlanner()
+    private var samplingPanelVisible = false
+    private var samplingInterval: TimeInterval
+    private var mergedSnapshot = PerformanceSnapshot.empty
     private var trendHistoryStorage: [MetricKind: [MetricTrendPoint]] = [:]
     private var previousSelfResourceCounters: SelfResourceCounters?
     private var lastSelfResourceSampleAt = Date.distantPast
@@ -29,14 +116,26 @@ final class PerformanceMonitor: ObservableObject {
     private var recoveryNotificationsEnabled: Bool
     private let notificationController = ThresholdNotificationController()
     private let processCPUAccounting = ProcessCPUAccounting.current
+    private var requestedExpandedMetric: MetricKind?
+    private var latestSelfResourceSnapshot = SelfResourceSnapshot()
+    private var latestPresentationState = PerformancePresentationState.empty
+    private var latestSettingsState = SettingsPerformanceState.empty
 
-    init(settings: MonitorSettings) {
+    init(
+        settings: MonitorSettings,
+        startsAutomatically: Bool = true,
+        sampleProvider: ((SamplingRequest) -> PerformanceSnapshot)? = nil
+    ) {
         enabledMetrics = settings.enabledMetrics
         enabledDetails = settings.enabledDetails
         thresholdRules = settings.thresholdRules
         notificationsEnabled = settings.thresholdNotificationsEnabled
         recoveryNotificationsEnabled = settings.thresholdRecoveryNotificationsEnabled
-        start(interval: settings.sampleInterval)
+        samplingInterval = settings.sampleInterval
+        self.sampleProvider = sampleProvider
+        if startsAutomatically {
+            start(interval: settings.sampleInterval)
+        }
 
         settings.$sampleInterval
             .dropFirst()
@@ -98,15 +197,42 @@ final class PerformanceMonitor: ObservableObject {
     deinit {
         timer?.cancel()
         alertRotationTimer?.cancel()
+        expandedRefreshWorkItem?.cancel()
     }
 
     func setExpandedMetric(_ metric: MetricKind?) {
-        expandedMetric = metric
+        guard requestedExpandedMetric != metric else { return }
+        requestedExpandedMetric = metric
+        latestPresentationState.expandedMetric = metric
+        panelProjection.publish(latestPresentationState)
+        let shouldScheduleRefresh = metric != nil && panelProjection.isVisible
         queue.async { [weak self] in
-            self?.samplingExpandedMetric = metric
-            self?.queue.asyncAfter(deadline: .now() + .milliseconds(150)) {
-                self?.sampleNow()
+            guard let self else { return }
+            self.samplingExpandedMetric = metric
+            self.expandedRefreshWorkItem?.cancel()
+            guard shouldScheduleRefresh else {
+                self.expandedRefreshWorkItem = nil
+                return
             }
+            let workItem = DispatchWorkItem { [weak self] in self?.sampleNow() }
+            self.expandedRefreshWorkItem = workItem
+            self.queue.asyncAfter(deadline: .now() + .milliseconds(150), execute: workItem)
+        }
+    }
+
+    func setPanelVisible(_ visible: Bool) {
+        panelProjection.setVisible(visible, latest: latestPresentationState)
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.samplingPanelVisible = visible
+            if visible { self.sampleNow() }
+        }
+    }
+
+    func setSettingsMonitoringActive(_ active: Bool) {
+        settingsProjection.setActive(active, latest: latestSettingsState)
+        if active {
+            probeCapabilities()
         }
     }
 
@@ -132,17 +258,23 @@ final class PerformanceMonitor: ObservableObject {
                 enabledDetails: Set<MetricDetail>(),
                 expandedMetric: nil,
                 backgroundMetrics: Set([.gpu, .thermal, .battery]),
-                backgroundDetails: sensorDetails
+                backgroundDetails: sensorDetails,
+                includesFans: BuildVariant.supportsFanReadings
             )
             let capabilitySnapshot = self.sampler.sample(request: request)
             DispatchQueue.main.async { [weak self] in
-                self?.snapshot = capabilitySnapshot
+                guard let self else { return }
+                self.latestPresentationState.snapshot = capabilitySnapshot
+                self.latestSettingsState.snapshot = capabilitySnapshot
+                self.panelProjection.publish(self.latestPresentationState)
+                self.settingsProjection.publish(self.latestSettingsState)
             }
         }
     }
 
     private func start(interval: TimeInterval) {
         timer?.cancel()
+        samplingInterval = interval
         let newTimer = DispatchSource.makeTimerSource(queue: queue)
         newTimer.schedule(deadline: .now(), repeating: interval, leeway: .milliseconds(200))
         newTimer.setEventHandler { [weak self] in self?.sampleNow() }
@@ -157,40 +289,23 @@ final class PerformanceMonitor: ObservableObject {
                 ? rule.kind
                 : nil
         })
-        let detailThresholdKinds = enabledThresholdKinds.filter { $0.requiredDetail != nil }
-        let activeDetailKinds = detailThresholdKinds.filter {
-            thresholdPresentation.isActive($0)
-        }
-        let isBackgroundDetailSampleDue = !detailThresholdKinds.isEmpty
-            && now.timeIntervalSince(lastBackgroundDetailSampleAt) >= 5
-
-        var requestedDetailKinds = activeDetailKinds
-        if isBackgroundDetailSampleDue {
-            requestedDetailKinds.formUnion(detailThresholdKinds)
-            lastBackgroundDetailSampleAt = now
-        }
-
-        let backgroundDetails = Set(requestedDetailKinds.compactMap(\.requiredDetail))
-        let primaryThresholdKinds = enabledThresholdKinds.filter { $0.requiredDetail == nil }
-        let backgroundMetrics = Set(
-            primaryThresholdKinds.map(\.metric) + requestedDetailKinds.map(\.metric)
-        )
-        let request = SamplingRequest(
+        let plan = cadencePlanner.plan(
+            now: now,
+            panelVisible: samplingPanelVisible,
+            sampleInterval: samplingInterval,
             enabledMetrics: enabledMetrics,
             enabledDetails: enabledDetails,
             expandedMetric: samplingExpandedMetric,
-            backgroundMetrics: backgroundMetrics,
-            backgroundDetails: backgroundDetails
+            enabledThresholdKinds: enabledThresholdKinds
         )
-        let newSnapshot = sampler.sample(request: request)
+        let request = plan.request
+        let partialSnapshot = sampleProvider?(request) ?? sampler.sample(request: request)
+        let newSnapshot = mergedSnapshot.merging(partialSnapshot, request: request)
+        mergedSnapshot = newSnapshot
 
-        let evaluatedKinds = enabledThresholdKinds.filter { kind in
-            guard let detail = kind.requiredDetail else { return true }
-            return request.includes(detail)
-        }
         let membershipChanged = updateThresholdStates(
             with: newSnapshot,
-            evaluatedKinds: evaluatedKinds
+            evaluatedKinds: plan.evaluatedThresholdKinds
         )
         let alerts = thresholdPresentation.alerts(using: thresholdRules)
         if membershipChanged || resetAlertRotation {
@@ -203,15 +318,28 @@ final class PerformanceMonitor: ObservableObject {
             at: now
         )
         let updatedSelfResource = updateSelfResourceIfNeeded(at: now)
+        if let updatedSelfResource {
+            latestSelfResourceSnapshot = updatedSelfResource
+        }
 
         DispatchQueue.main.async { [weak self] in
-            self?.snapshot = newSnapshot
-            self?.activeThresholdAlerts = alerts
-            self?.visibleThresholdAlert = visibleAlert
-            self?.trendHistory = updatedTrendHistory
-            if let updatedSelfResource {
-                self?.selfResourceSnapshot = updatedSelfResource
-            }
+            guard let self else { return }
+            let presentation = PerformancePresentationState(
+                snapshot: newSnapshot,
+                expandedMetric: self.requestedExpandedMetric,
+                activeThresholdAlerts: alerts,
+                visibleThresholdAlert: visibleAlert,
+                trendHistory: updatedTrendHistory
+            )
+            let settingsState = SettingsPerformanceState(
+                snapshot: newSnapshot,
+                selfResource: self.latestSelfResourceSnapshot
+            )
+            self.latestPresentationState = presentation
+            self.latestSettingsState = settingsState
+            self.panelProjection.publish(presentation)
+            self.settingsProjection.publish(settingsState)
+            self.menuBarProjection.publish(visibleAlert)
         }
     }
 
@@ -221,9 +349,6 @@ final class PerformanceMonitor: ObservableObject {
         })
         thresholdRules = rules
         let removedActiveAlert = thresholdPresentation.remove(changedKinds)
-        if changedKinds.contains(where: { $0.requiredDetail != nil }) {
-            lastBackgroundDetailSampleAt = .distantPast
-        }
         return removedActiveAlert
     }
 
@@ -241,7 +366,10 @@ final class PerformanceMonitor: ObservableObject {
                 using: self.thresholdRules
             ) else { return }
             DispatchQueue.main.async { [weak self] in
-                self?.visibleThresholdAlert = visibleAlert
+                guard let self else { return }
+                self.latestPresentationState.visibleThresholdAlert = visibleAlert
+                self.panelProjection.publish(self.latestPresentationState)
+                self.menuBarProjection.publish(visibleAlert)
             }
         }
         alertRotationTimer = newTimer

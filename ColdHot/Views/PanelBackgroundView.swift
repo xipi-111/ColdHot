@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import AVFoundation
 
 private struct PanelCardOpacityKey: EnvironmentKey {
     static let defaultValue = 1.0
@@ -273,10 +274,15 @@ struct PanelBackgroundView: View {
                         position: position
                     )
                     ZStack {
-                        Image(nsImage: asset.posterImage)
-                            .resizable()
+                        if PanelBackgroundPosterPolicy.showsPoster(
+                            mediaKind: asset.kind,
+                            reduceMotion: playbackIntent.reduceMotion
+                        ) {
+                            Image(nsImage: asset.posterImage)
+                                .resizable()
+                        }
 
-                        if asset.isDynamic, asset.mediaURL != nil {
+                        if asset.isDynamic {
                             PanelBackgroundDynamicPlayerLayer(
                                 assetID: asset.id,
                                 controller: playbackController,
@@ -313,7 +319,48 @@ private struct PanelBackgroundDynamicPlayerLayer: View {
         if intent.shouldPlay,
            controller.activeAssetID == assetID,
            controller.playbackErrorMessage == nil {
-            PanelBackgroundPlayerView(player: controller.player)
+            DynamicBackgroundPlaybackSurface(player: controller.player)
+                .id(assetID)
+        } else if !intent.reduceMotion {
+            Color.black
+        }
+    }
+}
+
+private struct DynamicBackgroundPlaybackSurface: View {
+    let player: AVPlayer
+    @State private var revealState = DynamicBackgroundRevealState()
+
+    var body: some View {
+        ZStack {
+            PanelBackgroundPlayerView(
+                player: player,
+                onReadyForDisplay: updateReadiness
+            )
+
+            Color.black.opacity(revealState.maskOpacity)
+        }
+        .onDisappear {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                revealState.reset()
+            }
+        }
+    }
+
+    private func updateReadiness(_ isReadyForDisplay: Bool) {
+        guard revealState.isReadyForDisplay != isReadyForDisplay else { return }
+        if isReadyForDisplay {
+            withAnimation(.easeOut(duration: DynamicBackgroundRevealState.revealDuration)) {
+                revealState.receive(isReadyForDisplay: true)
+            }
+        } else {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                revealState.receive(isReadyForDisplay: false)
+            }
         }
     }
 }

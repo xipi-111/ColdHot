@@ -14,6 +14,8 @@ enum PerformanceMonitorRuntimeCheck {
         settings.applyPreset(.minimal)
         settings.sampleInterval = 1
         let monitor = PerformanceMonitor(settings: settings)
+        monitor.setPanelVisible(true)
+        monitor.setSettingsMonitoringActive(true)
 
         RunLoop.main.run(until: Date().addingTimeInterval(7))
 

@@ -20,8 +20,15 @@ final class SystemSampler {
     private var thermalStateSince = Date()
     private let processCPUAccounting = ProcessCPUAccounting.current
     private let latencyProbe = NetworkLatencyProbe()
-    private let smcPowerReader = SMCPowerReader()
+    private let smcPowerReader: SMCPowerReader?
+    private let fanReader: () -> [FanSnapshot]
     private lazy var hidTemperatureReader = HIDTemperatureReader()
+
+    init(fanReader: (() -> [FanSnapshot])? = nil) {
+        let smcPowerReader = SMCPowerReader()
+        self.smcPowerReader = smcPowerReader
+        self.fanReader = fanReader ?? { smcPowerReader?.readFans() ?? [] }
+    }
 
     func sample(request: SamplingRequest) -> PerformanceSnapshot {
         let now = Date()
@@ -34,7 +41,7 @@ final class SystemSampler {
         let disk = request.includes(.disk)
             ? readDisk(at: now, request: request)
             : DiskSnapshot()
-        let fans = smcPowerReader?.readFans() ?? []
+        let fans = request.includesFans ? fanReader() : []
         let battery = request.includes(.battery) ? readBattery(request: request) : nil
 
         updateThermalState(at: now)

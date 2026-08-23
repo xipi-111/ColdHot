@@ -18,7 +18,7 @@ struct PrivacyPolicyView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("最后更新：2026 年 8 月 18 日")
+                    Text("最后更新：2026 年 8 月 22 日")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
@@ -33,12 +33,12 @@ struct PrivacyPolicyView: View {
                     if BuildVariant.channel == .direct {
                         policySection(
                             "软件更新",
-                            "官网版会通过 HTTPS 连接 GitHub 获取版本清单和下载用户允许的更新包。请求不会包含性能、温度、电池、进程或背景图片数据；用户可以在设置中关闭自动检查或自动下载。"
+                            "官网版会通过 HTTPS 连接 GitHub 获取版本清单和下载用户允许的更新包。请求不会包含性能、温度、电池、进程或本地背景媒体数据；用户可以在设置中关闭自动检查或自动下载。"
                         )
                     }
                     policySection(
                         "本地设置",
-                        "指标选择、刷新间隔和界面偏好保存在应用自己的本地偏好中。用户主动选择菜单面板背景时，ColdHot 会移除图片原始元数据，把降采样副本保存在应用的本地 Application Support 目录；图片不会上传，也不会用于其他目的。删除应用数据即可移除这些设置和背景副本。"
+                        "指标选择、刷新间隔和界面偏好保存在应用自己的本地偏好中。用户主动选择菜单面板背景时，ColdHot 会把处理后的静态图片、GIF 转换结果或视频副本，以及动态背景封面和必要元数据保存在应用的本地 Application Support 目录。静态图片会移除原始元数据；GIF 转换在本机完成且不保留声音；视频音轨只在用户主动开启声音、且对应面板可见时播放。背景媒体不会上传，也不会用于其他目的。更换或移除背景会清理旧媒体；删除应用数据即可移除这些设置和背景文件。"
                     )
                     policySection(
                         "版本差异",

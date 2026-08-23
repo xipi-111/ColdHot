@@ -7,6 +7,34 @@ enum PanelBackgroundMediaKind: String, Codable, Equatable {
     var isDynamic: Bool { self != .staticImage }
 }
 
+enum PanelBackgroundPosterPolicy {
+    static func showsPoster(
+        mediaKind: PanelBackgroundMediaKind,
+        reduceMotion: Bool
+    ) -> Bool {
+        !mediaKind.isDynamic || reduceMotion
+    }
+}
+
+struct DynamicBackgroundRevealState: Equatable {
+    static let revealDuration: TimeInterval = 0.4
+
+    private(set) var isReadyForDisplay = false
+
+    var maskOpacity: Double { isReadyForDisplay ? 0 : 1 }
+    var animationDuration: TimeInterval {
+        isReadyForDisplay ? Self.revealDuration : 0
+    }
+
+    mutating func receive(isReadyForDisplay: Bool) {
+        self.isReadyForDisplay = isReadyForDisplay
+    }
+
+    mutating func reset() {
+        isReadyForDisplay = false
+    }
+}
+
 struct PanelBackgroundManifest: Codable, Equatable {
     static let currentSchemaVersion = 1
 

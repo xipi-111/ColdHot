@@ -10,7 +10,8 @@ private struct PanelScrollRequest: Equatable {
 struct DashboardView: View {
     @Environment(\.openSettings) private var openSettings
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @ObservedObject var monitor: PerformanceMonitor
+    private let monitor: PerformanceMonitor
+    @ObservedObject private var performance: PanelPerformanceProjection
     @ObservedObject var settings: MonitorSettings
     @ObservedObject var dockController: DockDelayController
     @ObservedObject var panelBackgroundStore: PanelBackgroundStore
@@ -30,7 +31,8 @@ struct DashboardView: View {
         updateController: UpdateController,
         initialVisibleDetailsMetric: MetricKind? = nil
     ) {
-        _monitor = ObservedObject(wrappedValue: monitor)
+        self.monitor = monitor
+        _performance = ObservedObject(wrappedValue: monitor.panelProjection)
         _settings = ObservedObject(wrappedValue: settings)
         _dockController = ObservedObject(wrappedValue: dockController)
         _panelBackgroundStore = ObservedObject(wrappedValue: panelBackgroundStore)
@@ -82,11 +84,11 @@ struct DashboardView: View {
                     .scrollIndicators(.never)
                     .hidePanelVerticalScrollIndicator(allowsScrolling:
                         PanelScrollBehavior.allowsScrolling(
-                            expandedMetric: monitor.expandedMetric
+                            expandedMetric: performance.expandedMetric
                         )
                     )
                     .scrollDisabled(!PanelScrollBehavior.allowsScrolling(
-                        expandedMetric: monitor.expandedMetric
+                        expandedMetric: performance.expandedMetric
                     ))
                     .frame(height: metricsViewportHeight)
                     .onChange(of: requestedScroll) { _, request in
@@ -147,10 +149,12 @@ struct DashboardView: View {
         )
         .clipped()
         .onAppear {
+            monitor.setPanelVisible(true)
             panelBackgroundMenuLifecycle.didAppear()
             synchronizePanelBackgroundPlayback()
         }
         .onDisappear {
+            monitor.setPanelVisible(false)
             panelBackgroundMenuLifecycle.didDisappear()
             synchronizePanelBackgroundPlayback()
             expansionTransitionID += 1
@@ -159,7 +163,7 @@ struct DashboardView: View {
             presentationState.visibleDetailsMetric = nil
         }
         .onChange(of: settings.enabledMetrics) { _, metrics in
-            if let expandedMetric = monitor.expandedMetric, !metrics.contains(expandedMetric) {
+            if let expandedMetric = performance.expandedMetric, !metrics.contains(expandedMetric) {
                 animateExpansion(to: nil, scrollTarget: nil)
             }
         }
@@ -192,7 +196,7 @@ struct DashboardView: View {
     }
 
     private var enabledMetricKinds: [MetricKind] {
-        let alertMetrics = Set(monitor.activeThresholdAlerts.map { $0.kind.metric })
+        let alertMetrics = Set(performance.activeThresholdAlerts.map { $0.kind.metric })
         return PanelMetricVisibility.visibleMetrics(
             available: MetricKind.allCases.filter(BuildVariant.availableMetrics.contains),
             userEnabled: settings.enabledMetrics,
@@ -203,14 +207,14 @@ struct DashboardView: View {
     private var metricsViewportHeight: CGFloat {
         PanelLayout.metricsViewportHeight(
             metricCount: enabledMetricKinds.count,
-            hasExpandedMetric: monitor.expandedMetric != nil
+            hasExpandedMetric: performance.expandedMetric != nil
         )
     }
 
     private func showsExpandedContent(for metric: MetricKind) -> Bool {
         presentationState.showsExpandedContent(
             for: metric,
-            expandedMetric: monitor.expandedMetric
+            expandedMetric: performance.expandedMetric
         )
     }
 
@@ -227,7 +231,7 @@ struct DashboardView: View {
                 Text("ColdHot")
                     .font(.headline)
                     .panelTextReadability(.primary)
-                Text("更新于 \(monitor.snapshot.timestamp.formatted(date: .omitted, time: .standard))")
+                Text("更新于 \(performance.snapshot.timestamp.formatted(date: .omitted, time: .standard))")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .panelTextReadability(.secondary)
@@ -410,7 +414,7 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var fanStatus: some View {
-        if let fastestFan = monitor.snapshot.fans.max(by: { $0.speedRPM < $1.speedRPM }) {
+        if let fastestFan = performance.snapshot.fans.max(by: { $0.speedRPM < $1.speedRPM }) {
             HStack(spacing: 4) {
                 SpinningFanIcon(rpm: fastestFan.speedRPM)
                 Text("\(Int(fastestFan.speedRPM.rounded())) RPM")
@@ -433,7 +437,7 @@ struct DashboardView: View {
     }
 
     private var fanHelpText: String {
-        monitor.snapshot.fans
+        performance.snapshot.fans
             .sorted { $0.id < $1.id }
             .map { "风扇 \($0.id + 1)：\(Int($0.speedRPM.rounded())) RPM" }
             .joined(separator: "\n")
@@ -448,10 +452,10 @@ struct DashboardView: View {
         case .cpu:
             MetricCard(
                 metric: metric,
-                value: percent(monitor.snapshot.cpu.usage),
-                detail: "用户 \(percent(monitor.snapshot.cpu.user)) · 系统 \(percent(monitor.snapshot.cpu.system))",
-                progress: monitor.snapshot.cpu.usage / 100,
-                isExpanded: monitor.expandedMetric == metric,
+                value: percent(performance.snapshot.cpu.usage),
+                detail: "用户 \(percent(performance.snapshot.cpu.user)) · 系统 \(percent(performance.snapshot.cpu.system))",
+                progress: performance.snapshot.cpu.usage / 100,
+                isExpanded: performance.expandedMetric == metric,
                 showsExpandedContent: showsExpandedContent(for: metric),
                 onToggle: onToggle
             ) {
@@ -461,10 +465,10 @@ struct DashboardView: View {
         case .gpu:
             MetricCard(
                 metric: metric,
-                value: monitor.snapshot.gpu.usage.map(percent) ?? "不可用",
+                value: performance.snapshot.gpu.usage.map(percent) ?? "不可用",
                 detail: "Apple GPU 设备利用率",
-                progress: monitor.snapshot.gpu.usage.map { $0 / 100 },
-                isExpanded: monitor.expandedMetric == metric,
+                progress: performance.snapshot.gpu.usage.map { $0 / 100 },
+                isExpanded: performance.expandedMetric == metric,
                 showsExpandedContent: showsExpandedContent(for: metric),
                 onToggle: onToggle
             ) {
@@ -474,12 +478,12 @@ struct DashboardView: View {
         case .memory:
             MetricCard(
                 metric: metric,
-                value: bytes(monitor.snapshot.memory.used),
-                detail: "压力 \(monitor.snapshot.memory.pressure.rawValue) · 共 \(bytes(monitor.snapshot.memory.total))",
-                progress: monitor.snapshot.memory.total > 0
-                    ? Double(monitor.snapshot.memory.used) / Double(monitor.snapshot.memory.total)
+                value: bytes(performance.snapshot.memory.used),
+                detail: "压力 \(performance.snapshot.memory.pressure.rawValue) · 共 \(bytes(performance.snapshot.memory.total))",
+                progress: performance.snapshot.memory.total > 0
+                    ? Double(performance.snapshot.memory.used) / Double(performance.snapshot.memory.total)
                     : nil,
-                isExpanded: monitor.expandedMetric == metric,
+                isExpanded: performance.expandedMetric == metric,
                 showsExpandedContent: showsExpandedContent(for: metric),
                 onToggle: onToggle
             ) {
@@ -489,9 +493,9 @@ struct DashboardView: View {
         case .disk:
             MetricCard(
                 metric: metric,
-                value: "读 \(rate(monitor.snapshot.disk.read))",
-                detail: "写 \(rate(monitor.snapshot.disk.write))",
-                isExpanded: monitor.expandedMetric == metric,
+                value: "读 \(rate(performance.snapshot.disk.read))",
+                detail: "写 \(rate(performance.snapshot.disk.write))",
+                isExpanded: performance.expandedMetric == metric,
                 showsExpandedContent: showsExpandedContent(for: metric),
                 onToggle: onToggle
             ) {
@@ -501,9 +505,9 @@ struct DashboardView: View {
         case .network:
             MetricCard(
                 metric: metric,
-                value: "↓ \(rate(monitor.snapshot.network.download))",
-                detail: "↑ \(rate(monitor.snapshot.network.upload)) · \(monitor.snapshot.network.interface)",
-                isExpanded: monitor.expandedMetric == metric,
+                value: "↓ \(rate(performance.snapshot.network.download))",
+                detail: "↑ \(rate(performance.snapshot.network.upload)) · \(performance.snapshot.network.interface)",
+                isExpanded: performance.expandedMetric == metric,
                 showsExpandedContent: showsExpandedContent(for: metric),
                 onToggle: onToggle
             ) {
@@ -515,7 +519,7 @@ struct DashboardView: View {
                 metric: metric,
                 value: thermalTitle,
                 detail: "系统热压力（无需管理员权限）",
-                isExpanded: monitor.expandedMetric == metric,
+                isExpanded: performance.expandedMetric == metric,
                 showsExpandedContent: showsExpandedContent(for: metric),
                 onToggle: onToggle
             ) {
@@ -523,13 +527,13 @@ struct DashboardView: View {
                 thermalDetails
             }
         case .battery:
-            if let battery = monitor.snapshot.battery {
+            if let battery = performance.snapshot.battery {
                 MetricCard(
                     metric: metric,
                     value: percent(battery.percentage),
                     detail: batterySummary(battery),
                     progress: battery.percentage / 100,
-                    isExpanded: monitor.expandedMetric == metric,
+                    isExpanded: performance.expandedMetric == metric,
                     showsExpandedContent: showsExpandedContent(for: metric),
                     onToggle: onToggle
                 ) {
@@ -541,7 +545,7 @@ struct DashboardView: View {
                     metric: metric,
                     value: "不可用",
                     detail: "未检测到内置电池",
-                    isExpanded: monitor.expandedMetric == metric,
+                    isExpanded: performance.expandedMetric == metric,
                     showsExpandedContent: showsExpandedContent(for: metric),
                     onToggle: onToggle
                 ) {
@@ -555,7 +559,7 @@ struct DashboardView: View {
     private func toggle(_ metric: MetricKind) {
         let decision = PanelExpansionBehavior.decision(
             toggling: metric,
-            current: monitor.expandedMetric
+            current: performance.expandedMetric
         )
         animateExpansion(
             to: decision.expandedMetric,
@@ -570,7 +574,7 @@ struct DashboardView: View {
         expansionTransitionID += 1
         let transitionID = expansionTransitionID
         let plan = PanelExpansionAnimationPlan.transition(
-            from: monitor.expandedMetric,
+            from: performance.expandedMetric,
             to: target,
             reduceMotion: reduceMotion
         )
@@ -652,7 +656,7 @@ struct DashboardView: View {
 
     @ViewBuilder
     private func trendSection(_ metric: MetricKind) -> some View {
-        let points = monitor.trendHistory[metric] ?? []
+        let points = performance.trendHistory[metric] ?? []
         DetailSection(title: "最近 60 秒") {
             if points.count >= 2 {
                 MiniTrendChart(points: points, tint: metric.tint)
@@ -691,7 +695,7 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var cpuDetails: some View {
-        let snapshot = monitor.snapshot
+        let snapshot = performance.snapshot
         if settings.isDetailEnabled(.cpuBreakdown) {
             DetailSection(title: "CPU 构成") {
                 DetailValueRow(label: "用户", value: percent(snapshot.cpu.user))
@@ -743,7 +747,7 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var gpuDetails: some View {
-        let gpu = monitor.snapshot.gpu
+        let gpu = performance.snapshot.gpu
         if settings.isDetailEnabled(.gpuBreakdown) {
             DetailSection(title: "GPU 构成") {
                 DetailValueRow(label: "Renderer", value: gpu.renderer.map(percent) ?? "不可用")
@@ -769,7 +773,7 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var memoryDetails: some View {
-        let memory = monitor.snapshot.memory
+        let memory = performance.snapshot.memory
         if settings.isDetailEnabled(.memoryComposition) {
             DetailSection(title: "内存构成") {
                 DetailValueRow(label: "App/匿名", value: bytes(memory.app))
@@ -785,7 +789,7 @@ struct DashboardView: View {
             }
         }
         if settings.isDetailEnabled(.memoryProcesses) {
-            ProcessActivityList(title: "高内存进程", processes: monitor.snapshot.topMemoryProcesses) {
+            ProcessActivityList(title: "高内存进程", processes: performance.snapshot.topMemoryProcesses) {
                 bytes($0.memoryBytes)
             }
         }
@@ -794,7 +798,7 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var diskDetails: some View {
-        let disk = monitor.snapshot.disk
+        let disk = performance.snapshot.disk
         if settings.isDetailEnabled(.diskCapacity) {
             DetailSection(title: "存储容量") {
                 DetailValueRow(label: "可用", value: bytes(disk.availableBytes))
@@ -814,7 +818,7 @@ struct DashboardView: View {
             }
         }
         if settings.isDetailEnabled(.diskProcesses) {
-            ProcessActivityList(title: "高磁盘读写进程", processes: monitor.snapshot.topDiskProcesses) {
+            ProcessActivityList(title: "高磁盘读写进程", processes: performance.snapshot.topDiskProcesses) {
                 "↓ \(rate($0.diskReadPerSecond))  ↑ \(rate($0.diskWritePerSecond))"
             }
         }
@@ -823,7 +827,7 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var networkDetails: some View {
-        let network = monitor.snapshot.network
+        let network = performance.snapshot.network
         if settings.isDetailEnabled(.networkInterface) {
             DetailSection(title: "当前连接") {
                 DetailValueRow(label: "接口", value: network.interface)
@@ -855,11 +859,11 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var thermalDetails: some View {
-        let temperatures = monitor.snapshot.thermal.temperatures
+        let temperatures = performance.snapshot.thermal.temperatures
         if settings.isDetailEnabled(.thermalDuration) {
             DetailSection(title: "热状态") {
                 DetailValueRow(label: "当前等级", value: thermalTitle, tint: thermalColor)
-                DetailValueRow(label: "已持续", value: duration(since: monitor.snapshot.thermal.stateSince))
+                DetailValueRow(label: "已持续", value: duration(since: performance.snapshot.thermal.stateSince))
             }
         }
         if settings.isDetailEnabled(.thermalCPU) {
@@ -1074,7 +1078,7 @@ struct DashboardView: View {
     }
 
     private var thermalTitle: String {
-        switch monitor.snapshot.thermal.state {
+        switch performance.snapshot.thermal.state {
         case .nominal: "正常"
         case .fair: "偏热"
         case .serious: "较热"
@@ -1084,7 +1088,7 @@ struct DashboardView: View {
     }
 
     private var thermalColor: Color {
-        switch monitor.snapshot.thermal.state {
+        switch performance.snapshot.thermal.state {
         case .nominal: .green
         case .fair: .yellow
         case .serious: .orange

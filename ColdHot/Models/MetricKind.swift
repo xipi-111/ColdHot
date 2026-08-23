@@ -212,6 +212,23 @@ struct SamplingRequest {
     let expandedMetric: MetricKind?
     let backgroundMetrics: Set<MetricKind>
     let backgroundDetails: Set<MetricDetail>
+    let includesFans: Bool
+
+    init(
+        enabledMetrics: Set<MetricKind>,
+        enabledDetails: Set<MetricDetail>,
+        expandedMetric: MetricKind?,
+        backgroundMetrics: Set<MetricKind>,
+        backgroundDetails: Set<MetricDetail>,
+        includesFans: Bool = false
+    ) {
+        self.enabledMetrics = enabledMetrics
+        self.enabledDetails = enabledDetails
+        self.expandedMetric = expandedMetric
+        self.backgroundMetrics = backgroundMetrics
+        self.backgroundDetails = backgroundDetails
+        self.includesFans = includesFans
+    }
 
     func includes(_ metric: MetricKind) -> Bool {
         enabledMetrics.contains(metric) || backgroundMetrics.contains(metric)
@@ -220,5 +237,108 @@ struct SamplingRequest {
     func includes(_ detail: MetricDetail) -> Bool {
         (expandedMetric == detail.metric && enabledDetails.contains(detail))
             || backgroundDetails.contains(detail)
+    }
+}
+
+struct SamplingCadencePlan {
+    let request: SamplingRequest
+    let evaluatedThresholdKinds: Set<ThresholdMetric>
+}
+
+struct SamplingCadencePlanner {
+    private var lastMetricSampleAt: [MetricKind: Date] = [:]
+    private var lastSensorThresholdSampleAt: [ThresholdMetric: Date] = [:]
+    private var lastFanSampleAt: Date?
+
+    mutating func plan(
+        now: Date,
+        panelVisible: Bool,
+        sampleInterval: TimeInterval,
+        enabledMetrics: Set<MetricKind>,
+        enabledDetails: Set<MetricDetail>,
+        expandedMetric: MetricKind?,
+        enabledThresholdKinds: Set<ThresholdMetric>
+    ) -> SamplingCadencePlan {
+        let primaryThresholdKinds = enabledThresholdKinds.filter {
+            $0.requiredDetail == nil && $0 != .fanSpeed
+        }
+        let demandedMetrics = enabledMetrics.union(primaryThresholdKinds.map(\.metric))
+        var dueMetrics: Set<MetricKind> = []
+        for metric in demandedMetrics {
+            let cadence = hiddenCadence(for: metric, sampleInterval: sampleInterval)
+            if panelVisible || isDue(lastMetricSampleAt[metric], now: now, cadence: cadence) {
+                dueMetrics.insert(metric)
+                lastMetricSampleAt[metric] = now
+            }
+        }
+
+        var evaluatedThresholdKinds = Set(primaryThresholdKinds.filter {
+            dueMetrics.contains($0.metric)
+        })
+        var backgroundDetails: Set<MetricDetail> = []
+        for kind in enabledThresholdKinds {
+            guard let detail = kind.requiredDetail else { continue }
+            let expandedReadsDetail = panelVisible
+                && expandedMetric == detail.metric
+                && enabledDetails.contains(detail)
+            let sensorDue = isDue(
+                lastSensorThresholdSampleAt[kind],
+                now: now,
+                cadence: 5
+            )
+            if expandedReadsDetail || sensorDue {
+                backgroundDetails.insert(detail)
+                evaluatedThresholdKinds.insert(kind)
+                lastSensorThresholdSampleAt[kind] = now
+            }
+        }
+
+        let fanThresholdEnabled = enabledThresholdKinds.contains(.fanSpeed)
+        let fanThresholdDue = fanThresholdEnabled
+            && isDue(lastFanSampleAt, now: now, cadence: 5)
+        let includesFans = panelVisible || fanThresholdDue
+        if includesFans {
+            lastFanSampleAt = now
+            if fanThresholdEnabled {
+                evaluatedThresholdKinds.insert(.fanSpeed)
+            }
+        }
+
+        let backgroundMetrics = Set(evaluatedThresholdKinds.map(\.metric))
+        let request = SamplingRequest(
+            enabledMetrics: enabledMetrics.intersection(dueMetrics),
+            enabledDetails: enabledDetails,
+            expandedMetric: panelVisible ? expandedMetric : nil,
+            backgroundMetrics: backgroundMetrics,
+            backgroundDetails: backgroundDetails,
+            includesFans: includesFans
+        )
+        return SamplingCadencePlan(
+            request: request,
+            evaluatedThresholdKinds: evaluatedThresholdKinds
+        )
+    }
+
+    private func hiddenCadence(
+        for metric: MetricKind,
+        sampleInterval: TimeInterval
+    ) -> TimeInterval {
+        switch metric {
+        case .cpu, .memory, .network:
+            max(sampleInterval, 0.5)
+        case .gpu, .disk, .thermal:
+            max(sampleInterval, 5)
+        case .battery:
+            max(sampleInterval, 30)
+        }
+    }
+
+    private func isDue(
+        _ previous: Date?,
+        now: Date,
+        cadence: TimeInterval
+    ) -> Bool {
+        guard let previous else { return true }
+        return now.timeIntervalSince(previous) >= cadence
     }
 }

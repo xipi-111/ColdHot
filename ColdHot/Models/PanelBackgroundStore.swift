@@ -12,7 +12,7 @@ typealias PanelBackgroundWriteManifest = (_ data: Data, _ manifestURL: URL) thro
 
 @MainActor
 final class PanelBackgroundStore: ObservableObject {
-    static let maximumPixelDimension = 1_600
+    static let maximumPixelDimension = 960
 
     @Published private(set) var asset: PanelBackgroundAsset?
 
@@ -597,11 +597,18 @@ final class PanelBackgroundStore: ObservableObject {
     }
 
     private static func loadImage(at url: URL) -> NSImage? {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let image = CGImageSourceCreateImageAtIndex(
+        guard let source = CGImageSourceCreateWithURL(
+            url as CFURL,
+            [kCGImageSourceShouldCache: false] as CFDictionary
+        ), let image = CGImageSourceCreateThumbnailAtIndex(
                 source,
                 0,
-                [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
+                [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceShouldCacheImmediately: true,
+                    kCGImageSourceThumbnailMaxPixelSize: maximumPixelDimension,
+                ] as CFDictionary
               ) else {
             return nil
         }

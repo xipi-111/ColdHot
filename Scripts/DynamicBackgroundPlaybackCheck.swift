@@ -30,6 +30,7 @@ enum DynamicBackgroundPlaybackCheck {
         try await checkLoopBoundaryAndCurrentReplicaFailure(videoURL: videoURL)
         try await checkBoundedFailureLifecycle(in: directory)
         checkPlayerLayerBehavior()
+        try await checkPlayerLayerReadyForDisplay(videoURL: videoURL)
 
         print("Dynamic background playback checks passed")
     }
@@ -497,6 +498,36 @@ enum DynamicBackgroundPlaybackCheck {
         expect(view.playerLayer.player === secondPlayer, "A replacement update must install the new player")
         view.updatePlayer(nil)
         expect(view.playerLayer.player == nil, "Dismantling must clear the player")
+    }
+
+    @MainActor
+    private static func checkPlayerLayerReadyForDisplay(videoURL: URL) async throws {
+        let player = AVQueuePlayer(playerItem: AVPlayerItem(url: videoURL))
+        var readinessSignals: [Bool] = []
+        let view = PanelBackgroundPlayerLayerView(
+            player: player,
+            onReadyForDisplay: { readinessSignals.append($0) }
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 96, height: 96),
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = view
+        window.orderFrontRegardless()
+        defer {
+            player.pause()
+            view.updatePlayer(nil)
+            window.orderOut(nil)
+        }
+
+        player.play()
+        try await wait(
+            until: { readinessSignals.contains(true) },
+            timeout: 5,
+            diagnostic: "AVPlayerLayer never reported a display-ready first frame"
+        )
     }
 
     private static func dynamicAsset(
