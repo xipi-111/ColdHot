@@ -56,6 +56,16 @@
 - [x] Archive and export a universal Developer ID signed app.
 - [x] Obtain Apple notarization acceptance and staple the DMG.
 - [x] Verify app signature, Gatekeeper acceptance, architectures, and all 371 translations from the final DMG.
-- [ ] Verify the generated Sparkle signature against the installed app’s public key.
-- [ ] Publish GitHub release assets and verify the downloadable bytes.
-- [ ] Push the production appcast and verify update discovery from the installed app.
+- [x] Verify the generated Sparkle signature against the installed app’s public key.
+- [x] Publish GitHub release assets and verify the downloadable bytes.
+- [x] Push the production appcast and verify update discovery from the installed app.
+
+## Release verification results
+
+- Published: https://github.com/xipi-111/ColdHot/releases/tag/v1.6.0
+- Source tag: `v1.6.0`, commit `9edd963`. Signed update feed: commit `39ceca4`.
+- Apple notarization accepted submission `00dfbe5c-f354-49da-ac44-c9397766b51f`; DMG ticket stapled and Gatekeeper accepted the app and DMG.
+- Final DMG contains both x86_64 and arm64 executables and all 371 English / Simplified Chinese messages.
+- Sparkle Ed25519 signature verified against the key embedded in the currently installed app. Anonymous downloads of the public DMG and checksums match the local release bytes.
+- Production feed returned 1.6.0 / build 28 and matched the signed appcast byte for byte.
+- A read-only Sparkle information check targeting the installed ColdHot 1.5.2 (27) found ColdHot 1.6.0 (28) and the correct public DMG URL.
