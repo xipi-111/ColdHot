@@ -42,7 +42,7 @@ final class DockDelayController: ObservableObject {
         }
 
         guard CFPreferencesAppSynchronize(dockDomain) else {
-            errorMessage = "无法保存 Dock 设置"
+            errorMessage = String(localized: "无法保存 Dock 设置")
             isApplying = false
             refresh()
             return

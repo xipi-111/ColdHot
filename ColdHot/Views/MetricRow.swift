@@ -68,8 +68,8 @@ struct MetricCard<ExpandedContent: View>: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(metric.title)
-            .accessibilityValue("\(value)，\(detail)")
-            .accessibilityHint(isExpanded ? "收起详细信息" : "展开详细信息")
+            .accessibilityValue(String(format: String(localized: "%@，%@"), value, detail))
+            .accessibilityHint(isExpanded ? String(localized: "收起详细信息") : String(localized: "展开详细信息"))
 
             if isExpanded {
                 Divider().padding(.horizontal, 11)
@@ -168,7 +168,7 @@ struct MiniTrendChart: View {
         }
         .frame(height: 42)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("最近 60 秒趋势")
+        .accessibilityLabel(String(localized: "最近 60 秒趋势"))
     }
 }
 
@@ -180,7 +180,7 @@ struct ProcessActivityList: View {
     var body: some View {
         DetailSection(title: title) {
             if processes.isEmpty {
-                Text("正在建立采样基线…")
+                Text(String(localized: "正在建立采样基线…"))
                     .font(.caption)
                     .foregroundStyle(.tertiary)
                     .panelTextReadability(.secondary)

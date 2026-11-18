@@ -14,9 +14,9 @@ enum ThresholdSeverity: Int, CaseIterable, Codable, Identifiable {
 
     var title: String {
         switch self {
-        case .level1: "一级"
-        case .level2: "二级"
-        case .level3: "三级"
+        case .level1: String(localized: "一级")
+        case .level2: String(localized: "二级")
+        case .level3: String(localized: "三级")
         }
     }
 }
@@ -125,41 +125,41 @@ enum ThresholdMetric: String, CaseIterable, Codable, Identifiable, Hashable {
 
     var title: String {
         switch self {
-        case .cpuUsage: "CPU 使用率"
-        case .gpuUsage: "GPU 使用率"
-        case .memoryUsage: "内存使用率"
-        case .networkDownload: "下载速度"
-        case .networkUpload: "上传速度"
-        case .diskRead: "磁盘读取"
-        case .diskWrite: "磁盘写入"
-        case .thermalState: "系统热状态"
-        case .batteryPercentage: "电池低电量"
-        case .temperatureCPU: "CPU 温度"
-        case .temperatureGPU: "GPU 温度"
-        case .temperatureMemory: "内存温度"
-        case .temperatureStorage: "NAND 温度"
-        case .temperatureBattery: "电池温度"
-        case .temperatureAirflow: "风道温度"
-        case .temperatureWireless: "Wi-Fi 温度"
-        case .temperaturePowerManagement: "电源管理温度"
-        case .fanSpeed: "风扇转速"
-        case .systemPower: "整机功率"
-        case .batteryPower: "电池功率"
+        case .cpuUsage: String(localized: "CPU 使用率")
+        case .gpuUsage: String(localized: "GPU 使用率")
+        case .memoryUsage: String(localized: "内存使用率")
+        case .networkDownload: String(localized: "下载速度")
+        case .networkUpload: String(localized: "上传速度")
+        case .diskRead: String(localized: "磁盘读取")
+        case .diskWrite: String(localized: "磁盘写入")
+        case .thermalState: String(localized: "系统热状态")
+        case .batteryPercentage: String(localized: "电池低电量")
+        case .temperatureCPU: String(localized: "CPU 温度")
+        case .temperatureGPU: String(localized: "GPU 温度")
+        case .temperatureMemory: String(localized: "内存温度")
+        case .temperatureStorage: String(localized: "NAND 温度")
+        case .temperatureBattery: String(localized: "电池温度")
+        case .temperatureAirflow: String(localized: "风道温度")
+        case .temperatureWireless: String(localized: "Wi-Fi 温度")
+        case .temperaturePowerManagement: String(localized: "电源管理温度")
+        case .fanSpeed: String(localized: "风扇转速")
+        case .systemPower: String(localized: "整机功率")
+        case .batteryPower: String(localized: "电池功率")
         }
     }
 
     var explanation: String {
         switch self {
         case .batteryPercentage:
-            "低于或等于设定电量时显示"
+            String(localized: "低于或等于设定电量时显示")
         case .thermalState:
-            "达到设定热压力等级时显示"
+            String(localized: "达到设定热压力等级时显示")
         case .temperatureCPU, .temperatureGPU, .temperatureMemory, .temperatureStorage,
              .temperatureBattery, .temperatureAirflow, .temperatureWireless,
              .temperaturePowerManagement, .fanSpeed, .systemPower, .batteryPower:
-            "开启后会按需启动后台传感器采样"
+            String(localized: "开启后会按需启动后台传感器采样")
         default:
-            "高于或等于设定数值时显示"
+            String(localized: "高于或等于设定数值时显示")
         }
     }
 
@@ -311,55 +311,55 @@ enum ThresholdMetric: String, CaseIterable, Codable, Identifiable, Hashable {
         case .memoryUsage:
             guard snapshot.memory.total > 0 else { return nil }
             let value = Double(snapshot.memory.used) / Double(snapshot.memory.total) * 100
-            return measurement(value, object: "内存")
+            return measurement(value, object: String(localized: "内存"))
         case .networkDownload:
-            return measurement(snapshot.network.download / 1_048_576, object: "下载")
+            return measurement(snapshot.network.download / 1_048_576, object: String(localized: "下载"))
         case .networkUpload:
-            return measurement(snapshot.network.upload / 1_048_576, object: "上传")
+            return measurement(snapshot.network.upload / 1_048_576, object: String(localized: "上传"))
         case .diskRead:
-            return measurement(snapshot.disk.read / 1_048_576, object: "磁盘读取")
+            return measurement(snapshot.disk.read / 1_048_576, object: String(localized: "磁盘读取"))
         case .diskWrite:
-            return measurement(snapshot.disk.write / 1_048_576, object: "磁盘写入")
+            return measurement(snapshot.disk.write / 1_048_576, object: String(localized: "磁盘写入"))
         case .thermalState:
             let value = thermalValue(snapshot.thermal.state)
-            return ThresholdMeasurement(rawValue: value, valueText: thermalText(value), objectLabel: "系统")
+            return ThresholdMeasurement(rawValue: value, valueText: thermalText(value), objectLabel: String(localized: "系统"))
         case .batteryPercentage:
-            return snapshot.battery.map { measurement($0.percentage, object: "电池") }
+            return snapshot.battery.map { measurement($0.percentage, object: String(localized: "电池")) }
         case .temperatureCPU:
             return snapshot.thermal.temperatures.cpu.map { temperature($0.maximumCelsius, object: "CPU") }
         case .temperatureGPU:
             return snapshot.thermal.temperatures.gpu.map { temperature($0.maximumCelsius, object: "GPU") }
         case .temperatureMemory:
-            return snapshot.thermal.temperatures.memory.map { temperature($0.maximumCelsius, object: "内存") }
+            return snapshot.thermal.temperatures.memory.map { temperature($0.maximumCelsius, object: String(localized: "内存")) }
         case .temperatureStorage:
             return snapshot.thermal.temperatures.nandCelsius.map { temperature($0, object: "NAND") }
         case .temperatureBattery:
-            return snapshot.thermal.temperatures.battery.map { temperature($0.maximumCelsius, object: "电池") }
+            return snapshot.thermal.temperatures.battery.map { temperature($0.maximumCelsius, object: String(localized: "电池")) }
         case .temperatureAirflow:
             let temperatures = [
                 snapshot.thermal.temperatures.airflowLeftCelsius,
                 snapshot.thermal.temperatures.airflowRightCelsius
             ].compactMap { $0 }
-            return temperatures.max().map { temperature($0, object: "风道") }
+            return temperatures.max().map { temperature($0, object: String(localized: "风道")) }
         case .temperatureWireless:
             return snapshot.thermal.temperatures.wirelessCelsius.map { temperature($0, object: "Wi-Fi") }
         case .temperaturePowerManagement:
             return snapshot.thermal.temperatures.powerManagement.map {
-                temperature($0.maximumCelsius, object: "电源管理")
+                temperature($0.maximumCelsius, object: String(localized: "电源管理"))
             }
         case .fanSpeed:
             guard let fan = snapshot.fans.max(by: { $0.speedRPM < $1.speedRPM }) else { return nil }
             return ThresholdMeasurement(
                 rawValue: fan.speedRPM,
                 valueText: String(Int(fan.speedRPM.rounded())),
-                objectLabel: "风扇 \(fan.id + 1)"
+                objectLabel: String(format: String(localized: "风扇 %@"), String(fan.id + 1))
             )
         case .systemPower:
-            return snapshot.battery?.systemPowerWatts.map { power($0, object: "整机") }
+            return snapshot.battery?.systemPowerWatts.map { power($0, object: String(localized: "整机")) }
         case .batteryPower:
             guard let battery = snapshot.battery,
                   let value = battery.batteryPowerWatts ?? battery.estimatedBatteryPowerWatts else { return nil }
-            return power(abs(value), object: "电池")
+            return power(abs(value), object: String(localized: "电池"))
         }
     }
 
@@ -405,10 +405,10 @@ enum ThresholdMetric: String, CaseIterable, Codable, Identifiable, Hashable {
 
     private func thermalText(_ value: Double) -> String {
         switch Int(value) {
-        case 1: "偏热"
-        case 2: "较热"
-        case 3: "严重"
-        default: "正常"
+        case 1: String(localized: "偏热")
+        case 2: String(localized: "较热")
+        case 3: String(localized: "严重")
+        default: String(localized: "正常")
         }
     }
 

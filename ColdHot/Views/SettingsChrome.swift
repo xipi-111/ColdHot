@@ -312,6 +312,16 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
 
     var id: Self { self }
 
+    var title: String {
+        switch self {
+        case .appearance: String(localized: "外观")
+        case .metrics: String(localized: "指标")
+        case .alerts: String(localized: "阈值提醒")
+        case .general: String(localized: "通用")
+        case .about: String(localized: "关于")
+        }
+    }
+
     var slug: String {
         switch self {
         case .appearance: "appearance"
@@ -534,7 +544,7 @@ struct SettingsSidebar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Text("设置")
+            Text(String(localized: "设置"))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -593,7 +603,7 @@ struct SettingsSidebar: View {
             HStack(spacing: 9) {
                 Image(systemName: page.symbol)
                     .frame(width: 18)
-                Text(page.rawValue)
+                Text(page.title)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 10)
@@ -699,7 +709,7 @@ struct SettingsPageContent<Content: View>: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .accessibilityElement(children: .contain)
-        .settingsAccessibilityLabel(page.rawValue)
+        .settingsAccessibilityLabel(page.title)
         .settingsAccessibilityIdentifier("settings-page-\(page.slug)")
     }
 

@@ -6,10 +6,10 @@ struct PrivacyPolicyView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("隐私政策")
+                Text(String(localized: "隐私政策"))
                     .font(.title2.bold())
                 Spacer()
-                Button("完成") { dismiss() }
+                Button(String(localized: "完成")) { dismiss() }
                     .keyboardShortcut(.defaultAction)
             }
             .padding()
@@ -18,33 +18,33 @@ struct PrivacyPolicyView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("最后更新：2026 年 8 月 22 日")
+                    Text(String(localized: "最后更新：2026 年 8 月 22 日"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
                     policySection(
-                        "数据处理",
-                        "ColdHot 的性能、温度、电池、网络与进程数据只在本机即时读取和显示。应用不创建账户，不包含广告或分析 SDK，也不会把监控结果上传给开发者或第三方。"
+                        String(localized: "数据处理"),
+                        String(localized: "ColdHot 的性能、温度、电池、网络与进程数据只在本机即时读取和显示。应用不创建账户，不包含广告或分析 SDK，也不会把监控结果上传给开发者或第三方。")
                     )
                     policySection(
-                        "网络延迟测试",
-                        "网络延迟详细项默认关闭。用户主动开启并展开网络卡片后，应用约每 10 秒向 1.1.1.1:443 发起一次 TCP 连接，用于测量建连延迟；不会发送监控数据。"
+                        String(localized: "网络延迟测试"),
+                        String(localized: "网络延迟详细项默认关闭。用户主动开启并展开网络卡片后，应用约每 10 秒向 1.1.1.1:443 发起一次 TCP 连接，用于测量建连延迟；不会发送监控数据。")
                     )
                     if BuildVariant.channel == .direct {
                         policySection(
-                            "软件更新",
-                            "官网版会通过 HTTPS 连接 GitHub 获取版本清单和下载用户允许的更新包。请求不会包含性能、温度、电池、进程或本地背景媒体数据；用户可以在设置中关闭自动检查或自动下载。"
+                            String(localized: "软件更新"),
+                            String(localized: "官网版会通过 HTTPS 连接 GitHub 获取版本清单和下载用户允许的更新包。请求不会包含性能、温度、电池、进程或本地背景媒体数据；用户可以在设置中关闭自动检查或自动下载。")
                         )
                     }
                     policySection(
-                        "本地设置",
-                        "指标选择、刷新间隔和界面偏好保存在应用自己的本地偏好中。用户主动选择菜单面板背景时，ColdHot 会把处理后的静态图片、GIF 转换结果或视频副本，以及动态背景封面和必要元数据保存在应用的本地 Application Support 目录。静态图片会移除原始元数据；GIF 转换在本机完成且不保留声音；视频音轨只在用户主动开启声音、且对应面板可见时播放。背景媒体不会上传，也不会用于其他目的。更换或移除背景会清理旧媒体；删除应用数据即可移除这些设置和背景文件。"
+                        String(localized: "本地设置"),
+                        String(localized: "指标选择、刷新间隔和界面偏好保存在应用自己的本地偏好中。用户主动选择菜单面板背景时，ColdHot 会把处理后的静态图片、GIF 转换结果或视频副本，以及动态背景封面和必要元数据保存在应用的本地 Application Support 目录。静态图片会移除原始元数据；GIF 转换在本机完成且不保留声音；视频音轨只在用户主动开启声音、且对应面板可见时播放。背景媒体不会上传，也不会用于其他目的。更换或移除背景会清理旧媒体；删除应用数据即可移除这些设置和背景文件。")
                     )
                     policySection(
-                        "版本差异",
+                        String(localized: "版本差异"),
                         BuildVariant.isAppStore
-                            ? "App Store 版运行在 App Sandbox 中，只使用该版本允许的系统能力。"
-                            : "官网版可读取更多本机传感器并提供 Dock 快捷控制；这些操作仍只在本机执行。"
+                            ? String(localized: "App Store 版运行在 App Sandbox 中，只使用该版本允许的系统能力。")
+                            : String(localized: "官网版可读取更多本机传感器并提供 Dock 快捷控制；这些操作仍只在本机执行。")
                     )
                 }
                 .padding(20)

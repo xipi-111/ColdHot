@@ -8,11 +8,19 @@ enum MonitoringPreset: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    var title: String {
+        switch self {
+        case .minimal: String(localized: "极简")
+        case .everyday: String(localized: "日常")
+        case .diagnostic: String(localized: "诊断")
+        }
+    }
+
     var explanation: String {
         switch self {
-        case .minimal: "CPU、内存、热状态和电池"
-        case .everyday: "显示全部一级指标，详细采样保持克制"
-        case .diagnostic: "启用全部指标和详细项目"
+        case .minimal: String(localized: "CPU、内存、热状态和电池")
+        case .everyday: String(localized: "显示全部一级指标，详细采样保持克制")
+        case .diagnostic: String(localized: "启用全部指标和详细项目")
         }
     }
 }

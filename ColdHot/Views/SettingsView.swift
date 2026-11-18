@@ -127,7 +127,7 @@ struct SettingsPreviewAudioToggle: View {
     }
 
     private var accessibilityLabel: String {
-        isAudioEnabled ? "关闭预览声音" : "开启预览声音"
+        isAudioEnabled ? String(localized: "关闭预览声音") : String(localized: "开启预览声音")
     }
 
     private func toggleAudio() {
@@ -217,7 +217,7 @@ struct SettingsView: View {
             onCompletion: handleBackgroundSelection
         )
         .alert(
-            "无法设置背景",
+            String(localized: "无法设置背景"),
             isPresented: Binding(
                 get: { backgroundErrorMessage != nil },
                 set: { isPresented in
@@ -225,14 +225,14 @@ struct SettingsView: View {
                 }
             )
         ) {
-            Button("好", role: .cancel) { backgroundErrorMessage = nil }
+            Button(String(localized: "好"), role: .cancel) { backgroundErrorMessage = nil }
         } message: {
-            Text(backgroundErrorMessage ?? "请稍后重试。")
+            Text(backgroundErrorMessage ?? String(localized: "请稍后重试。"))
         }
-        .alert("无法开启通知", isPresented: $notificationAuthorizationDenied) {
-            Button("好", role: .cancel) {}
+        .alert(String(localized: "无法开启通知"), isPresented: $notificationAuthorizationDenied) {
+            Button(String(localized: "好"), role: .cancel) {}
         } message: {
-            Text("请在系统设置的通知页面允许 ColdHot 发送通知。")
+            Text(String(localized: "请在系统设置的通知页面允许 ColdHot 发送通知。"))
         }
         .onAppear {
             monitor.setSettingsMonitoringActive(selectedPage == .about)
@@ -296,7 +296,7 @@ struct SettingsView: View {
                 HStack(alignment: .top, spacing: columns.spacing) {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 8) {
-                            Text("菜单面板真实范围")
+                            Text(String(localized: "菜单面板真实范围"))
                                 .font(.system(size: 14, weight: .semibold))
                             Spacer(minLength: 0)
                             SettingsPreviewAudioToggle(
@@ -308,21 +308,21 @@ struct SettingsView: View {
                         }
 
                         if showsPreviewAudioToggle {
-                            Text("仅本次预览，离开后恢复静音")
+                            Text(String(localized: "仅本次预览，离开后恢复静音"))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                                .settingsAccessibilityLabel("仅本次预览，离开后恢复静音")
+                                .settingsAccessibilityLabel(String(localized: "仅本次预览，离开后恢复静音"))
                         }
 
                         if panelBackgroundPreviewIntent.shouldShowReduceMotionMessage {
-                            Text("减少动态效果已开启，动态背景与声音已暂停")
+                            Text(String(localized: "减少动态效果已开启，动态背景与声音已暂停"))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .settingsAccessibilityIdentifier(
                                     "settings-preview-reduce-motion-message"
                                 )
                                 .settingsAccessibilityLabel(
-                                    "减少动态效果已开启，动态背景与声音已暂停"
+                                    String(localized: "减少动态效果已开启，动态背景与声音已暂停")
                                 )
                         }
 
@@ -347,7 +347,7 @@ struct SettingsView: View {
                                 enabledMetrics: previewEnabledMetrics,
                                 showsDockQuickControl: settings.showDockQuickControl
                             )
-                            .settingsAccessibilityLabel("菜单面板外观预览")
+                            .settingsAccessibilityLabel(String(localized: "菜单面板外观预览"))
                         }
                         .clipShape(
                             RoundedRectangle(
@@ -371,7 +371,7 @@ struct SettingsView: View {
 
                         if settings.isPanelBackgroundEnabled,
                            panelBackgroundStore.hasImage {
-                            Text("拖动预览调整图片位置，也可使用右侧按钮微调")
+                            Text(String(localized: "拖动预览调整图片位置，也可使用右侧按钮微调"))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -382,7 +382,7 @@ struct SettingsView: View {
 
                     VStack(alignment: .leading, spacing: SettingsLayout.sectionSpacing) {
                         SettingsSectionSurface(
-                            "面板背景与可读性",
+                            String(localized: "面板背景与可读性"),
                             accessibilityIdentifier: "settings-section-appearance-0"
                         ) {
                             panelBackgroundSettings(
@@ -396,14 +396,14 @@ struct SettingsView: View {
                             ) {
                                 SettingsRow {
                                     Label(
-                                        "当前组合可能使文字或进度条难以辨认。",
+                                        String(localized: "当前组合可能使文字或进度条难以辨认。"),
                                         systemImage: "exclamationmark.triangle.fill"
                                     )
                                     .foregroundStyle(.orange)
                                 }
                                 SettingsSectionDivider()
                                 SettingsRow {
-                                    Button("恢复推荐可读性") {
+                                    Button(String(localized: "恢复推荐可读性")) {
                                         settings.restoreRecommendedReadability()
                                     }
                                 }
@@ -421,7 +421,7 @@ struct SettingsView: View {
     private var metricsPage: some View {
         SettingsPageContent(page: .metrics) {
             SettingsSectionSurface(
-                "快速预设",
+                String(localized: "快速预设"),
                 accessibilityIdentifier: "settings-section-metrics-0"
             ) {
                 ForEach(MonitoringPreset.allCases) { preset in
@@ -430,7 +430,7 @@ struct SettingsView: View {
                             settings.applyPreset(preset)
                         } label: {
                             HStack {
-                                Text(preset.rawValue)
+                                Text(preset.title)
                                 Spacer()
                                 Text(preset.explanation)
                                     .font(.caption)
@@ -446,14 +446,14 @@ struct SettingsView: View {
             }
 
             SettingsSectionSurface(
-                "菜单栏指标",
-                footer: "一级开关控制整张卡片；详细项目只在卡片展开后按需采样。",
+                String(localized: "菜单栏指标"),
+                footer: String(localized: "一级开关控制整张卡片；详细项目只在卡片展开后按需采样。"),
                 accessibilityIdentifier: "settings-section-metrics-1"
             ) {
                 ForEach(MetricCategory.allCases) { category in
                     VStack(alignment: .leading, spacing: 0) {
                         SettingsRow {
-                            Text(category.rawValue)
+                            Text(category.title)
                                 .font(.headline)
                                 .padding(.top, 5)
                         }
@@ -477,30 +477,30 @@ struct SettingsView: View {
     private var alertsPage: some View {
         SettingsPageContent(page: .alerts) {
             SettingsSectionSurface(
-                "系统通知",
+                String(localized: "系统通知"),
                 accessibilityIdentifier: "settings-section-alerts-0"
             ) {
                 SettingsRow {
-                    Toggle("达到阈值时通知", isOn: thresholdNotificationsBinding)
+                    Toggle(String(localized: "达到阈值时通知"), isOn: thresholdNotificationsBinding)
                 }
                 SettingsSectionDivider()
                 SettingsRow {
                     Toggle(
-                        "恢复正常时通知",
+                        String(localized: "恢复正常时通知"),
                         isOn: $settings.thresholdRecoveryNotificationsEnabled
                     )
                     .disabled(!settings.thresholdNotificationsEnabled)
                 }
                 SettingsSectionDivider()
                 SettingsRow {
-                    Text("默认关闭。相同指标触发通知后会等待 10 分钟，避免反复打扰。")
+                    Text(String(localized: "默认关闭。相同指标触发通知后会等待 10 分钟，避免反复打扰。"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
 
             SettingsSectionSurface(
-                "提醒等级颜色",
+                String(localized: "提醒等级颜色"),
                 accessibilityIdentifier: "settings-section-alerts-1"
             ) {
                 thresholdColorRow(.level1)
@@ -511,7 +511,7 @@ struct SettingsView: View {
                 SettingsSectionDivider()
                 SettingsRow {
                     HStack(spacing: 16) {
-                        Text("菜单栏预览")
+                        Text(String(localized: "菜单栏预览"))
                         Spacer()
                         ForEach(ThresholdSeverity.allCases) { severity in
                             VStack(spacing: 3) {
@@ -531,18 +531,18 @@ struct SettingsView: View {
                 SettingsRow {
                     HStack {
                         Spacer()
-                        Button("恢复推荐颜色") {
+                        Button(String(localized: "恢复推荐颜色")) {
                             settings.restoreRecommendedThresholdColors()
                         }
                         .settingsAccessibilityIdentifier("settings-threshold-colors-reset")
-                        .settingsAccessibilityLabel("恢复推荐颜色")
+                        .settingsAccessibilityLabel(String(localized: "恢复推荐颜色"))
                     }
                 }
             }
 
             SettingsSectionSurface(
-                "菜单栏阈值显示",
-                footer: "连续 2 次达到阈值后显示；连续 3 次回落后恢复。多个告警每 5 秒轮换。",
+                String(localized: "菜单栏阈值显示"),
+                footer: String(localized: "连续 2 次达到阈值后显示；连续 3 次回落后恢复。多个告警每 5 秒轮换。"),
                 accessibilityIdentifier: "settings-section-alerts-2"
             ) {
                 ForEach(thresholdParentMetrics) { metric in
@@ -561,12 +561,12 @@ struct SettingsView: View {
         SettingsPageContent(page: .general) {
             if BuildVariant.channel == .direct {
                 SettingsSectionSurface(
-                    "自动更新",
+                    String(localized: "自动更新"),
                     accessibilityIdentifier: "settings-section-general-0"
                 ) {
                     SettingsRow {
                         Toggle(
-                            "自动检查更新",
+                            String(localized: "自动检查更新"),
                             isOn: Binding(
                                 get: { updateController.automaticallyChecksForUpdates },
                                 set: { updateController.automaticallyChecksForUpdates = $0 }
@@ -576,7 +576,7 @@ struct SettingsView: View {
                     SettingsSectionDivider()
                     SettingsRow {
                         Toggle(
-                            "自动下载更新",
+                            String(localized: "自动下载更新"),
                             isOn: Binding(
                                 get: { updateController.automaticallyDownloadsUpdates },
                                 set: { updateController.automaticallyDownloadsUpdates = $0 }
@@ -586,25 +586,25 @@ struct SettingsView: View {
                     }
                     SettingsSectionDivider()
                     SettingsRow {
-                        Button("立即检查更新…") { updateController.checkForUpdates() }
+                        Button(String(localized: "立即检查更新…")) { updateController.checkForUpdates() }
                     }
                 }
             }
 
             if BuildVariant.supportsDockControl {
                 SettingsSectionSurface(
-                    "快捷控制",
+                    String(localized: "快捷控制"),
                     accessibilityIdentifier: "settings-section-general-1"
                 ) {
                     SettingsRow {
                         Toggle(
-                            "在菜单面板显示“Dock 即时弹出”",
+                            String(localized: "在菜单面板显示“Dock 即时弹出”"),
                             isOn: $settings.showDockQuickControl
                         )
                     }
                     SettingsSectionDivider()
                     SettingsRow {
-                        Text("只影响自动隐藏 Dock 的边缘触发等待时间；关闭时恢复修改前的延迟。")
+                        Text(String(localized: "只影响自动隐藏 Dock 的边缘触发等待时间；关闭时恢复修改前的延迟。"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -612,20 +612,20 @@ struct SettingsView: View {
             }
 
             SettingsSectionSurface(
-                "采样",
+                String(localized: "采样"),
                 accessibilityIdentifier: "settings-section-general-2"
             ) {
                 SettingsRow {
-                    Picker("刷新间隔", selection: $settings.sampleInterval) {
-                        Text("1 秒（实时）").tag(1.0)
-                        Text("2 秒（推荐）").tag(2.0)
-                        Text("5 秒（省电）").tag(5.0)
+                    Picker(String(localized: "刷新间隔"), selection: $settings.sampleInterval) {
+                        Text(String(localized: "1 秒（实时）")).tag(1.0)
+                        Text(String(localized: "2 秒（推荐）")).tag(2.0)
+                        Text(String(localized: "5 秒（省电）")).tag(5.0)
                     }
                     .pickerStyle(.segmented)
                 }
                 SettingsSectionDivider()
                 SettingsRow {
-                    Text("收起时只采集摘要；每核心、进程排行和传感器详情仅按需更新。")
+                    Text(String(localized: "收起时只采集摘要；每核心、进程排行和传感器详情仅按需更新。"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -640,7 +640,7 @@ struct SettingsView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Spacer()
-                        Button("恢复默认") { settings.reset() }
+                        Button(String(localized: "恢复默认")) { settings.reset() }
                     }
                 }
             }
@@ -651,70 +651,70 @@ struct SettingsView: View {
         SettingsPageContent(page: .about) {
             VStack(alignment: .leading, spacing: 16) {
                 SettingsSectionSurface(
-                    "版本",
+                    String(localized: "版本"),
                     accessibilityIdentifier: "settings-section-about-0"
                 ) {
                     SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
-                        settingsValueRow("发行渠道", value: BuildVariant.displayName)
+                        settingsValueRow(String(localized: "发行渠道"), value: BuildVariant.displayName)
                     }
                     SettingsSectionDivider()
                     SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
-                        settingsValueRow("当前版本", value: currentVersionText)
+                        settingsValueRow(String(localized: "当前版本"), value: currentVersionText)
                     }
                     SettingsSectionDivider()
                     SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
                         HStack(spacing: 12) {
                             if BuildVariant.channel == .direct {
-                                Button("检查更新…") {
+                                Button(String(localized: "检查更新…")) {
                                     updateController.checkForUpdates()
                                 }
                             }
-                            Button("隐私政策") { showsPrivacyPolicy = true }
+                            Button(String(localized: "隐私政策")) { showsPrivacyPolicy = true }
                         }
                     }
                 }
 
                 SettingsSectionSurface(
-                    "设备能力",
+                    String(localized: "设备能力"),
                     accessibilityIdentifier: "settings-section-about-1",
                     headerAccessory: {
-                        Button("重新检测") { monitor.probeCapabilities() }
+                        Button(String(localized: "重新检测")) { monitor.probeCapabilities() }
                             .font(.caption)
                             .controlSize(.small)
                             .buttonStyle(.borderless)
                             .foregroundStyle(.secondary)
-                            .settingsAccessibilityLabel("重新检测设备能力")
-                            .help("重新检测所有设备能力")
+                            .settingsAccessibilityLabel(String(localized: "重新检测设备能力"))
+                            .help(String(localized: "重新检测所有设备能力"))
                     }
                 ) {
                     SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
-                        capabilityRow("GPU 实时读数", available: settingsPerformance.snapshot.gpu.usage != nil)
+                        capabilityRow(String(localized: "GPU 实时读数"), available: settingsPerformance.snapshot.gpu.usage != nil)
                     }
                     SettingsSectionDivider()
                     SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
-                        capabilityRow("风扇转速", available: !settingsPerformance.snapshot.fans.isEmpty)
+                        capabilityRow(String(localized: "风扇转速"), available: !settingsPerformance.snapshot.fans.isEmpty)
                     }
                     SettingsSectionDivider()
                     SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
-                        capabilityRow("温度传感器", available: hasTemperatureReading)
+                        capabilityRow(String(localized: "温度传感器"), available: hasTemperatureReading)
                     }
                     SettingsSectionDivider()
                     SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
                         capabilityRow(
-                            "系统功率",
+                            String(localized: "系统功率"),
                             available: settingsPerformance.snapshot.battery?.systemPowerWatts != nil
                         )
                     }
                 }
 
                 SettingsSectionSurface(
-                    "ColdHot 运行影响",
-                    footer: "该区域每约 5 秒更新，用于确认监控工具自身的资源开销。",
+                    String(localized: "ColdHot 运行影响"),
+                    footer: String(localized: "该区域每约 5 秒更新，用于确认监控工具自身的资源开销。"),
                     accessibilityIdentifier: "settings-section-about-2"
                 ) {
                     SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
                         settingsValueRow(
-                            "CPU（整机）",
+                            String(localized: "CPU（整机）"),
                             value: settingsPerformance.selfResourceSnapshot.cpuUsage.formatted(
                                 .number.precision(.fractionLength(1))
                             ) + "%"
@@ -722,15 +722,18 @@ struct SettingsView: View {
                     }
                     SettingsSectionDivider()
                     SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
-                        settingsValueRow("内存", value: selfMemoryText)
+                        settingsValueRow(String(localized: "内存"), value: selfMemoryText)
                     }
                     SettingsSectionDivider()
                     SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
                         settingsValueRow(
-                            "唤醒",
-                            value: settingsPerformance.selfResourceSnapshot.wakeupsPerSecond.formatted(
-                                .number.precision(.fractionLength(1))
-                            ) + " 次/秒"
+                            String(localized: "唤醒"),
+                            value: String(
+                                format: String(localized: "%@ 次/秒"),
+                                settingsPerformance.selfResourceSnapshot.wakeupsPerSecond.formatted(
+                                    .number.precision(.fractionLength(1))
+                                )
+                            )
                         )
                     }
                 }
@@ -746,29 +749,29 @@ struct SettingsView: View {
                     Image(systemName: asset.kind == .staticImage ? "photo" : "film")
                         .foregroundStyle(.secondary)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("自定义背景")
+                        Text(String(localized: "自定义背景"))
                             .font(.headline)
-                            .settingsAccessibilityLabel("自定义背景")
-                        Text("当前：\(backgroundResourceTypeLabel(for: asset.kind))")
+                            .settingsAccessibilityLabel(String(localized: "自定义背景"))
+                        Text(String(format: String(localized: "当前：%@"), backgroundResourceTypeLabel(for: asset.kind)))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .settingsAccessibilityLabel(
-                                "当前：\(backgroundResourceTypeLabel(for: asset.kind))"
+                                String(format: String(localized: "当前：%@"), backgroundResourceTypeLabel(for: asset.kind))
                             )
-                        Text("支持图片、GIF、MP4、MOV、M4V 及系统视频")
+                        Text(String(localized: "支持图片、GIF、MP4、MOV、M4V 及系统视频"))
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                             .settingsAccessibilityLabel(
-                                "支持图片、GIF、MP4、MOV、M4V 及系统视频"
+                                String(localized: "支持图片、GIF、MP4、MOV、M4V 及系统视频")
                             )
                     }
                     Spacer()
-                    Button("更换背景…") { isChoosingBackground = true }
+                    Button(String(localized: "更换背景…")) { isChoosingBackground = true }
                         .settingsControlEnabled(
                             !backgroundOperationState.isProcessing,
                             identifier: "settings-background-replace"
                         )
-                        .settingsAccessibilityLabel("更换背景…")
+                        .settingsAccessibilityLabel(String(localized: "更换背景…"))
                 }
             }
             if backgroundOperationState.isProcessing {
@@ -778,7 +781,7 @@ struct SettingsView: View {
             SettingsSectionDivider()
             SettingsRow {
                 Toggle(
-                    "使用自定义背景",
+                    String(localized: "使用自定义背景"),
                     isOn: panelBackgroundEnabledBinding
                 )
             }
@@ -786,12 +789,12 @@ struct SettingsView: View {
             SettingsRow(minHeight: sliderRowHeight) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
-                        Text("图片缩放")
+                        Text(String(localized: "图片缩放"))
                         Spacer()
                         Text("\(Int((settings.panelBackgroundZoom * 100).rounded()))%")
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
-                        Button("复位") {
+                        Button(String(localized: "复位")) {
                             settings.resetPanelBackgroundTransform()
                         }
                         .buttonStyle(.plain)
@@ -802,34 +805,34 @@ struct SettingsView: View {
                         in: 1...2,
                         step: 0.05
                     )
-                    .accessibilityLabel("背景图片缩放")
+                    .accessibilityLabel(String(localized: "背景图片缩放"))
                 }
             }
             SettingsSectionDivider()
             SettingsRow(minHeight: SettingsLayout.compactRowHeight) {
                 HStack(spacing: 10) {
-                    Text("图片位置")
+                    Text(String(localized: "图片位置"))
                     Spacer()
                     HStack(spacing: 6) {
                         backgroundPositionButton(
                             systemImage: "arrow.left",
                             direction: .left,
-                            accessibilityLabel: "向左微调背景图片"
+                            accessibilityLabel: String(localized: "向左微调背景图片")
                         )
                         backgroundPositionButton(
                             systemImage: "arrow.up",
                             direction: .up,
-                            accessibilityLabel: "向上微调背景图片"
+                            accessibilityLabel: String(localized: "向上微调背景图片")
                         )
                         backgroundPositionButton(
                             systemImage: "arrow.down",
                             direction: .down,
-                            accessibilityLabel: "向下微调背景图片"
+                            accessibilityLabel: String(localized: "向下微调背景图片")
                         )
                         backgroundPositionButton(
                             systemImage: "arrow.right",
                             direction: .right,
-                            accessibilityLabel: "向右微调背景图片"
+                            accessibilityLabel: String(localized: "向右微调背景图片")
                         )
                     }
                 }
@@ -838,7 +841,7 @@ struct SettingsView: View {
             SettingsRow(minHeight: sliderRowHeight) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
-                        Text("深色遮罩")
+                        Text(String(localized: "深色遮罩"))
                         Spacer()
                         Text("\(Int((settings.panelBackgroundDimOpacity * 100).rounded()))%")
                             .monospacedDigit()
@@ -849,14 +852,14 @@ struct SettingsView: View {
                         in: 0...0.70,
                         step: 0.05
                     )
-                    .accessibilityLabel("深色遮罩强度")
+                    .accessibilityLabel(String(localized: "深色遮罩强度"))
                 }
             }
             SettingsSectionDivider()
             SettingsRow(minHeight: sliderRowHeight) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
-                        Text("卡片不透明度")
+                        Text(String(localized: "卡片不透明度"))
                         Spacer()
                         Text("\(Int((settings.panelCardOpacity * 100).rounded()))%")
                             .monospacedDigit()
@@ -867,14 +870,14 @@ struct SettingsView: View {
                         in: 0.10...1,
                         step: 0.05
                     )
-                    .accessibilityLabel("卡片不透明度")
+                    .accessibilityLabel(String(localized: "卡片不透明度"))
                 }
             }
             SettingsSectionDivider()
             SettingsRow(minHeight: sliderRowHeight) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
-                        Text("主文字亮度")
+                        Text(String(localized: "主文字亮度"))
                         Spacer()
                         Text("\(Int((settings.panelPrimaryTextOpacity * 100).rounded()))%")
                             .monospacedDigit()
@@ -885,14 +888,14 @@ struct SettingsView: View {
                         in: 0.50...1,
                         step: 0.05
                     )
-                    .accessibilityLabel("面板主文字亮度")
+                    .accessibilityLabel(String(localized: "面板主文字亮度"))
                 }
             }
             SettingsSectionDivider()
             SettingsRow(minHeight: sliderRowHeight) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
-                        Text("辅助文字亮度")
+                        Text(String(localized: "辅助文字亮度"))
                         Spacer()
                         Text("\(Int((settings.panelSecondaryTextOpacity * 100).rounded()))%")
                             .monospacedDigit()
@@ -903,14 +906,14 @@ struct SettingsView: View {
                         in: 0.50...1,
                         step: 0.05
                     )
-                    .accessibilityLabel("面板辅助文字亮度")
+                    .accessibilityLabel(String(localized: "面板辅助文字亮度"))
                 }
             }
             SettingsSectionDivider()
             SettingsRow(minHeight: sliderRowHeight) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
-                        Text("进度条透明度")
+                        Text(String(localized: "进度条透明度"))
                         Spacer()
                         Text("\(Int((settings.panelProgressOpacity * 100).rounded()))%")
                             .monospacedDigit()
@@ -921,17 +924,17 @@ struct SettingsView: View {
                         in: 0.50...1,
                         step: 0.05
                     )
-                    .accessibilityLabel("面板进度条透明度")
+                    .accessibilityLabel(String(localized: "面板进度条透明度"))
                 }
             }
             SettingsSectionDivider()
             SettingsRow(minHeight: 40) {
                 HStack {
-                    Text("背景仅保存在本机")
+                    Text(String(localized: "背景仅保存在本机"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Button("移除", role: .destructive) {
+                    Button(String(localized: "移除"), role: .destructive) {
                         removeBackground()
                     }
                     .buttonStyle(.plain)
@@ -951,23 +954,23 @@ struct SettingsView: View {
                         .background(.quaternary, in: RoundedRectangle(cornerRadius: 9))
 
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("自定义背景")
+                        Text(String(localized: "自定义背景"))
                             .font(.headline)
-                            .settingsAccessibilityLabel("自定义背景")
-                        Text("支持图片、GIF、MP4、MOV、M4V 及系统视频")
+                            .settingsAccessibilityLabel(String(localized: "自定义背景"))
+                        Text(String(localized: "支持图片、GIF、MP4、MOV、M4V 及系统视频"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .settingsAccessibilityLabel(
-                                "支持图片、GIF、MP4、MOV、M4V 及系统视频"
+                                String(localized: "支持图片、GIF、MP4、MOV、M4V 及系统视频")
                             )
                     }
                     Spacer()
-                    Button("选择背景…") { isChoosingBackground = true }
+                    Button(String(localized: "选择背景…")) { isChoosingBackground = true }
                         .settingsControlEnabled(
                             !backgroundOperationState.isProcessing,
                             identifier: "settings-background-select"
                         )
-                        .settingsAccessibilityLabel("选择背景…")
+                        .settingsAccessibilityLabel(String(localized: "选择背景…"))
                 }
             }
             if backgroundOperationState.isProcessing {
@@ -979,10 +982,10 @@ struct SettingsView: View {
 
     private var backgroundProcessingRow: some View {
         SettingsRow {
-            ProgressView("正在处理动态背景…")
+            ProgressView(String(localized: "正在处理动态背景…"))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .settingsAccessibilityIdentifier("settings-background-processing")
-                .settingsAccessibilityLabel("正在处理动态背景…")
+                .settingsAccessibilityLabel(String(localized: "正在处理动态背景…"))
         }
     }
 
@@ -1124,7 +1127,7 @@ struct SettingsView: View {
         let build = Bundle.main.object(
             forInfoDictionaryKey: "CFBundleVersion"
         ) as? String ?? "—"
-        return "\(version)（\(build)）"
+        return String(format: String(localized: "%@（%@）"), version, build)
     }
 
     private func capabilityRow(_ title: String, available: Bool) -> some View {
@@ -1132,7 +1135,7 @@ struct SettingsView: View {
             Text(title)
             Spacer()
             Label(
-                available ? "本机可用" : "本机未返回",
+                available ? String(localized: "本机可用") : String(localized: "本机未返回"),
                 systemImage: available ? "checkmark.circle.fill" : "minus.circle"
             )
             .font(.caption)
@@ -1219,9 +1222,9 @@ struct SettingsView: View {
 
     private func backgroundResourceTypeLabel(for kind: PanelBackgroundMediaKind) -> String {
         switch kind {
-        case .staticImage: "静态图片"
-        case .convertedGIF: "动态 GIF"
-        case .video: "视频"
+        case .staticImage: String(localized: "静态图片")
+        case .convertedGIF: String(localized: "动态 GIF")
+        case .video: String(localized: "视频")
         }
     }
 
@@ -1258,8 +1261,8 @@ struct SettingsView: View {
                             backgroundDragStartPosition = nil
                         }
                 )
-                .accessibilityLabel("调整背景图片位置")
-                .accessibilityHint("拖动图片调整位置，或使用右侧方向按钮微调")
+                .accessibilityLabel(String(localized: "调整背景图片位置"))
+                .accessibilityHint(String(localized: "拖动图片调整位置，或使用右侧方向按钮微调"))
         }
     }
 
@@ -1303,7 +1306,7 @@ struct SettingsView: View {
                 Toggle("", isOn: metricBinding(metric))
                     .labelsHidden()
                     .toggleStyle(.switch)
-                    .accessibilityLabel("显示 \(metric.title)")
+                    .accessibilityLabel(String(format: String(localized: "显示 %@"), metric.title))
             }
 
             DisclosureGroup(isExpanded: disclosureBinding(metric)) {
@@ -1327,7 +1330,7 @@ struct SettingsView: View {
                 .padding(.leading, 31)
                 .padding(.top, 6)
             } label: {
-                Text("详细项目")
+                Text(String(localized: "详细项目"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -1369,7 +1372,7 @@ struct SettingsView: View {
                     settings.thresholdRule(for: $0).isEnabled
                 }.count
                 if enabledCount > 0 {
-                    Text("已开启 \(enabledCount) 项")
+                    Text(String(format: String(localized: "已开启 %@ 项"), String(enabledCount)))
                         .font(.caption2)
                         .foregroundStyle(metric.tint)
                 }
@@ -1386,7 +1389,7 @@ struct SettingsView: View {
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .controlSize(.small)
-                    .accessibilityLabel("启用\(kind.title)阈值")
+                    .accessibilityLabel(String(format: String(localized: "启用%@阈值"), kind.title))
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(kind.title)
@@ -1405,10 +1408,10 @@ struct SettingsView: View {
 
             if kind == .thermalState {
                 HStack(spacing: 6) {
-                    Text("固定映射")
-                    Text("偏热 → 一级")
-                    Text("较热 → 二级")
-                    Text("严重 → 三级")
+                    Text(String(localized: "固定映射"))
+                    Text(String(localized: "偏热 → 一级"))
+                    Text(String(localized: "较热 → 二级"))
+                    Text(String(localized: "严重 → 三级"))
                 }
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -1416,7 +1419,7 @@ struct SettingsView: View {
                 .settingsAccessibilityIdentifier(
                     "settings-threshold-thermalState-fixed-mapping"
                 )
-                .settingsAccessibilityLabel("热状态固定三级映射")
+                .settingsAccessibilityLabel(String(localized: "热状态固定三级映射"))
             } else {
                 DisclosureGroup(isExpanded: thresholdTierDisclosureBinding(kind)) {
                     HStack(spacing: 18) {
@@ -1427,14 +1430,14 @@ struct SettingsView: View {
                     .padding(.leading, 31)
                     .padding(.top, 5)
                 } label: {
-                    Text("分档设置")
+                    Text(String(localized: "分档设置"))
                         .font(.caption)
                 }
                 .disabled(!rule.isEnabled)
                 .opacity(rule.isEnabled ? 1 : 0.45)
                 .padding(.leading, 31)
                 .settingsAccessibilityIdentifier("settings-threshold-tiers-\(kind.rawValue)")
-                .settingsAccessibilityLabel("分档设置")
+                .settingsAccessibilityLabel(String(localized: "分档设置"))
             }
         }
     }
@@ -1446,9 +1449,9 @@ struct SettingsView: View {
     ) -> some View {
         if kind == .thermalState {
             Picker("", selection: thresholdValueBinding(kind, severity: .level1)) {
-                Text("偏热").tag(1.0)
-                Text("较热").tag(2.0)
-                Text("严重").tag(3.0)
+                Text(String(localized: "偏热")).tag(1.0)
+                Text(String(localized: "较热")).tag(2.0)
+                Text(String(localized: "严重")).tag(3.0)
             }
             .labelsHidden()
             .frame(width: 88)
@@ -1462,11 +1465,11 @@ struct SettingsView: View {
                 .textFieldStyle(.roundedBorder)
                 .multilineTextAlignment(.trailing)
                 .frame(width: 68)
-                .accessibilityLabel("\(kind.title)\(severity.title)阈值")
+                .accessibilityLabel(String(format: String(localized: "%@%@阈值"), kind.title, severity.title))
                 .settingsAccessibilityIdentifier(
                     "settings-threshold-\(kind.rawValue)-level\(severity.rawValue)"
                 )
-                .settingsAccessibilityLabel("\(kind.title)\(severity.title)阈值")
+                .settingsAccessibilityLabel(String(format: String(localized: "%@%@阈值"), kind.title, severity.title))
 
                 Text(kind.unit)
                     .font(.caption)
@@ -1499,14 +1502,14 @@ struct SettingsView: View {
                 }
                 Spacer()
                 if severity == .level1 {
-                    Toggle("跟随系统", isOn: levelOneFollowsSystemBinding)
+                    Toggle(String(localized: "跟随系统"), isOn: levelOneFollowsSystemBinding)
                         .toggleStyle(.checkbox)
                         .settingsAccessibilityIdentifier(
                             "settings-threshold-color-level1-system"
                         )
                 }
                 ColorPicker(
-                    "\(severity.title)颜色",
+                    String(format: String(localized: "%@颜色"), severity.title),
                     selection: thresholdColorBinding(severity),
                     supportsOpacity: true
                 )
@@ -1526,9 +1529,9 @@ struct SettingsView: View {
 
     private func thresholdColorExplanation(_ severity: ThresholdSeverity) -> String {
         switch severity {
-        case .level1: "刚达到阈值 · Semibold"
-        case .level2: "明显超出 · Bold"
-        case .level3: "严重超出 · Heavy"
+        case .level1: String(localized: "刚达到阈值 · Semibold")
+        case .level2: String(localized: "明显超出 · Bold")
+        case .level3: String(localized: "严重超出 · Heavy")
         }
     }
 

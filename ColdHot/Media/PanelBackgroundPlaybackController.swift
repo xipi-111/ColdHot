@@ -309,7 +309,7 @@ final class PanelBackgroundPlaybackController: ObservableObject {
         player.removeAllItems()
 
         if playbackErrorMessage == nil {
-            playbackErrorMessage = errorDescription ?? "无法播放动态背景。"
+            playbackErrorMessage = errorDescription ?? String(localized: "无法播放动态背景。")
         }
     }
 

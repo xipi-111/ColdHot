@@ -231,7 +231,7 @@ struct DashboardView: View {
                 Text("ColdHot")
                     .font(.headline)
                     .panelTextReadability(.primary)
-                Text("更新于 \(performance.snapshot.timestamp.formatted(date: .omitted, time: .standard))")
+                Text(String(format: String(localized: "更新于 %@"), performance.snapshot.timestamp.formatted(date: .omitted, time: .standard)))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .panelTextReadability(.secondary)
@@ -241,7 +241,7 @@ struct DashboardView: View {
 
             HStack(spacing: 5) {
                 Circle().fill(thermalColor).frame(width: 7, height: 7)
-                Text("热状态 \(thermalTitle)")
+                Text(String(format: String(localized: "热状态 %@"), thermalTitle))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .panelTextReadability(.secondary)
@@ -256,16 +256,16 @@ struct DashboardView: View {
                 .foregroundStyle(.green)
                 .frame(width: 24)
             VStack(alignment: .leading, spacing: 2) {
-                Text("ColdHot 已在菜单栏运行")
+                Text(String(localized: "ColdHot 已在菜单栏运行"))
                     .font(.system(size: 12, weight: .semibold))
                     .panelTextReadability(.primary)
-                Text("收起时只采集摘要；详细指标和传感器按需启动。")
+                Text(String(localized: "收起时只采集摘要；详细指标和传感器按需启动。"))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .panelTextReadability(.secondary)
             }
             Spacer()
-            Button("知道了") { settings.completeOnboarding() }
+            Button(String(localized: "知道了")) { settings.completeOnboarding() }
                 .controlSize(.small)
         }
         .padding(.horizontal, 14)
@@ -277,15 +277,15 @@ struct DashboardView: View {
             Image(systemName: "checklist")
                 .font(.system(size: 26))
                 .foregroundStyle(.secondary)
-            Text("尚未选择指标")
+            Text(String(localized: "尚未选择指标"))
                 .font(.headline)
                 .panelTextReadability(.primary)
-            Text("在设置中勾选希望显示的性能指标。")
+            Text(String(localized: "在设置中勾选希望显示的性能指标。"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .panelTextReadability(.secondary)
             Button(action: openSettingsAndFocus) {
-                Text("打开设置")
+                Text(String(localized: "打开设置"))
                     .panelTextReadability(.primary)
             }
                 .buttonStyle(.borderedProminent)
@@ -300,7 +300,7 @@ struct DashboardView: View {
                 .foregroundStyle(.blue)
                 .frame(width: 24)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Dock 即时弹出")
+                Text(String(localized: "Dock 即时弹出"))
                     .font(.system(size: 12, weight: .medium))
                     .panelTextReadability(.primary)
                 if let error = dockController.errorMessage {
@@ -308,15 +308,15 @@ struct DashboardView: View {
                         .foregroundStyle(.red)
                         .panelTextReadability(.secondary)
                 } else if dockController.isInstant {
-                    Text("Dock零延迟弹出已开启")
+                    Text(String(localized: "Dock零延迟弹出已开启"))
                         .foregroundStyle(.tertiary)
                         .panelTextReadability(.secondary)
                 } else if !dockController.isAutoHideEnabled {
-                    Text("Dock 自动隐藏当前已关闭")
+                    Text(String(localized: "Dock 自动隐藏当前已关闭"))
                         .foregroundStyle(.tertiary)
                         .panelTextReadability(.secondary)
                 } else {
-                    Text("使用系统默认弹出延迟")
+                    Text(String(localized: "使用系统默认弹出延迟"))
                         .foregroundStyle(.tertiary)
                         .panelTextReadability(.secondary)
                 }
@@ -333,7 +333,7 @@ struct DashboardView: View {
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
-                .accessibilityLabel("Dock 即时弹出")
+                .accessibilityLabel(String(localized: "Dock 即时弹出"))
             }
         }
         .padding(.horizontal, 14)
@@ -345,7 +345,7 @@ struct DashboardView: View {
         HStack {
             Button(action: openSettingsAndFocus) {
                 Label {
-                    Text("设置")
+                    Text(String(localized: "设置"))
                         .panelTextReadability(.secondary)
                 } icon: {
                     Image(systemName: "gearshape")
@@ -361,24 +361,24 @@ struct DashboardView: View {
             if let version = updateController.availableVersion {
                 Divider().frame(height: 14)
                 Button(action: updateController.checkForUpdates) {
-                    Label("更新", systemImage: "arrow.down.circle.fill")
+                    Label(String(localized: "更新"), systemImage: "arrow.down.circle.fill")
                         .panelTextReadability(.secondary)
                 }
                 .buttonStyle(.plain)
-                .help("ColdHot \(version) 可用")
+                .help(String(format: String(localized: "ColdHot %@ 可用"), version))
             }
             Spacer()
             if BuildVariant.supportsFanReadings {
                 fanStatus
                 Divider().frame(height: 14)
             }
-            Text("每 \(settings.sampleInterval.formatted()) 秒")
+            Text(String(format: String(localized: "每 %@ 秒"), settings.sampleInterval.formatted()))
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .panelTextReadability(.secondary)
             Divider().frame(height: 14)
             Button(action: { NSApplication.shared.terminate(nil) }) {
-                Text("退出")
+                Text(String(localized: "退出"))
                     .panelTextReadability(.secondary)
             }
                 .buttonStyle(.plain)
@@ -432,14 +432,14 @@ struct DashboardView: View {
             }
             .font(.caption2)
             .foregroundStyle(.tertiary)
-            .help("未读取到风扇转速")
+            .help(String(localized: "未读取到风扇转速"))
         }
     }
 
     private var fanHelpText: String {
         performance.snapshot.fans
             .sorted { $0.id < $1.id }
-            .map { "风扇 \($0.id + 1)：\(Int($0.speedRPM.rounded())) RPM" }
+            .map { String(format: String(localized: "风扇 %@：%@ RPM"), String($0.id + 1), String(Int($0.speedRPM.rounded()))) }
             .joined(separator: "\n")
     }
 
@@ -453,7 +453,7 @@ struct DashboardView: View {
             MetricCard(
                 metric: metric,
                 value: percent(performance.snapshot.cpu.usage),
-                detail: "用户 \(percent(performance.snapshot.cpu.user)) · 系统 \(percent(performance.snapshot.cpu.system))",
+                detail: String(format: String(localized: "用户 %@ · 系统 %@"), percent(performance.snapshot.cpu.user), percent(performance.snapshot.cpu.system)),
                 progress: performance.snapshot.cpu.usage / 100,
                 isExpanded: performance.expandedMetric == metric,
                 showsExpandedContent: showsExpandedContent(for: metric),
@@ -465,8 +465,8 @@ struct DashboardView: View {
         case .gpu:
             MetricCard(
                 metric: metric,
-                value: performance.snapshot.gpu.usage.map(percent) ?? "不可用",
-                detail: "Apple GPU 设备利用率",
+                value: performance.snapshot.gpu.usage.map(percent) ?? String(localized: "不可用"),
+                detail: String(localized: "Apple GPU 设备利用率"),
                 progress: performance.snapshot.gpu.usage.map { $0 / 100 },
                 isExpanded: performance.expandedMetric == metric,
                 showsExpandedContent: showsExpandedContent(for: metric),
@@ -479,7 +479,7 @@ struct DashboardView: View {
             MetricCard(
                 metric: metric,
                 value: bytes(performance.snapshot.memory.used),
-                detail: "压力 \(performance.snapshot.memory.pressure.rawValue) · 共 \(bytes(performance.snapshot.memory.total))",
+                detail: String(format: String(localized: "压力 %@ · 共 %@"), performance.snapshot.memory.pressure.title, bytes(performance.snapshot.memory.total)),
                 progress: performance.snapshot.memory.total > 0
                     ? Double(performance.snapshot.memory.used) / Double(performance.snapshot.memory.total)
                     : nil,
@@ -493,8 +493,8 @@ struct DashboardView: View {
         case .disk:
             MetricCard(
                 metric: metric,
-                value: "读 \(rate(performance.snapshot.disk.read))",
-                detail: "写 \(rate(performance.snapshot.disk.write))",
+                value: String(format: String(localized: "读 %@"), rate(performance.snapshot.disk.read)),
+                detail: String(format: String(localized: "写 %@"), rate(performance.snapshot.disk.write)),
                 isExpanded: performance.expandedMetric == metric,
                 showsExpandedContent: showsExpandedContent(for: metric),
                 onToggle: onToggle
@@ -518,7 +518,7 @@ struct DashboardView: View {
             MetricCard(
                 metric: metric,
                 value: thermalTitle,
-                detail: "系统热压力（无需管理员权限）",
+                detail: String(localized: "系统热压力（无需管理员权限）"),
                 isExpanded: performance.expandedMetric == metric,
                 showsExpandedContent: showsExpandedContent(for: metric),
                 onToggle: onToggle
@@ -543,8 +543,8 @@ struct DashboardView: View {
             } else {
                 MetricCard(
                     metric: metric,
-                    value: "不可用",
-                    detail: "未检测到内置电池",
+                    value: String(localized: "不可用"),
+                    detail: String(localized: "未检测到内置电池"),
                     isExpanded: performance.expandedMetric == metric,
                     showsExpandedContent: showsExpandedContent(for: metric),
                     onToggle: onToggle
@@ -657,19 +657,19 @@ struct DashboardView: View {
     @ViewBuilder
     private func trendSection(_ metric: MetricKind) -> some View {
         let points = performance.trendHistory[metric] ?? []
-        DetailSection(title: "最近 60 秒") {
+        DetailSection(title: String(localized: "最近 60 秒")) {
             if points.count >= 2 {
                 MiniTrendChart(points: points, tint: metric.tint)
                 HStack {
-                    Text("低 \(trendValueText(points.map(\.value).min() ?? 0, metric: metric))")
+                    Text(String(format: String(localized: "低 %@"), trendValueText(points.map(\.value).min() ?? 0, metric: metric)))
                     Spacer()
-                    Text("高 \(trendValueText(points.map(\.value).max() ?? 0, metric: metric))")
+                    Text(String(format: String(localized: "高 %@"), trendValueText(points.map(\.value).max() ?? 0, metric: metric)))
                 }
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .panelTextReadability(.secondary)
             } else {
-                Text("正在积累趋势数据…")
+                Text(String(localized: "正在积累趋势数据…"))
                     .font(.caption)
                     .foregroundStyle(.tertiary)
                     .panelTextReadability(.secondary)
@@ -685,10 +685,10 @@ struct DashboardView: View {
             return value.formatted(.number.precision(.fractionLength(1))) + " MB/s"
         case .thermal:
             switch Int(value.rounded()) {
-            case 1: return "偏热"
-            case 2: return "较热"
-            case 3: return "严重"
-            default: return "正常"
+            case 1: return String(localized: "偏热")
+            case 2: return String(localized: "较热")
+            case 3: return String(localized: "严重")
+            default: return String(localized: "正常")
             }
         }
     }
@@ -697,19 +697,19 @@ struct DashboardView: View {
     private var cpuDetails: some View {
         let snapshot = performance.snapshot
         if settings.isDetailEnabled(.cpuBreakdown) {
-            DetailSection(title: "CPU 构成") {
-                DetailValueRow(label: "用户", value: percent(snapshot.cpu.user))
-                DetailValueRow(label: "系统", value: percent(snapshot.cpu.system))
-                DetailValueRow(label: "空闲", value: percent(snapshot.cpu.idle))
+            DetailSection(title: String(localized: "CPU 构成")) {
+                DetailValueRow(label: String(localized: "用户"), value: percent(snapshot.cpu.user))
+                DetailValueRow(label: String(localized: "系统"), value: percent(snapshot.cpu.system))
+                DetailValueRow(label: String(localized: "空闲"), value: percent(snapshot.cpu.idle))
             }
         }
         if settings.isDetailEnabled(.cpuLoad) {
-            DetailSection(title: "系统负载") {
-                DetailValueRow(label: "1 / 5 / 15 分钟", value: snapshot.cpu.loadAverage.map(decimal).joined(separator: "  ·  "))
+            DetailSection(title: String(localized: "系统负载")) {
+                DetailValueRow(label: String(localized: "1 / 5 / 15 分钟"), value: snapshot.cpu.loadAverage.map(decimal).joined(separator: "  ·  "))
             }
         }
         if settings.isDetailEnabled(.cpuCores) {
-            DetailSection(title: "每核心使用率") {
+            DetailSection(title: String(localized: "每核心使用率")) {
                 if snapshot.cpu.perCore.isEmpty {
                     samplingPlaceholder
                 } else {
@@ -735,11 +735,11 @@ struct DashboardView: View {
             }
         }
         if settings.isDetailEnabled(.cpuProcesses) {
-            ProcessActivityList(title: "高 CPU 进程", processes: snapshot.topCPUProcesses) { percent($0.cpuUsage) }
+            ProcessActivityList(title: String(localized: "高 CPU 进程"), processes: snapshot.topCPUProcesses) { percent($0.cpuUsage) }
         }
         if settings.isDetailEnabled(.cpuWakeups) {
-            ProcessActivityList(title: "高唤醒进程", processes: snapshot.topWakeupProcesses) {
-                decimal($0.wakeupsPerSecond) + " 次/s"
+            ProcessActivityList(title: String(localized: "高唤醒进程"), processes: snapshot.topWakeupProcesses) {
+                String(format: String(localized: "%@ 次/s"), decimal($0.wakeupsPerSecond))
             }
         }
         if !hasEnabledDetail(for: .cpu) { noDetails }
@@ -749,13 +749,13 @@ struct DashboardView: View {
     private var gpuDetails: some View {
         let gpu = performance.snapshot.gpu
         if settings.isDetailEnabled(.gpuBreakdown) {
-            DetailSection(title: "GPU 构成") {
-                DetailValueRow(label: "Renderer", value: gpu.renderer.map(percent) ?? "不可用")
-                DetailValueRow(label: "Tiler", value: gpu.tiler.map(percent) ?? "不可用")
+            DetailSection(title: String(localized: "GPU 构成")) {
+                DetailValueRow(label: "Renderer", value: gpu.renderer.map(percent) ?? String(localized: "不可用"))
+                DetailValueRow(label: "Tiler", value: gpu.tiler.map(percent) ?? String(localized: "不可用"))
             }
         }
         if settings.isDetailEnabled(.gpuDisplays) {
-            DetailSection(title: "显示环境") {
+            DetailSection(title: String(localized: "显示环境")) {
                 if gpu.displays.isEmpty {
                     samplingPlaceholder
                 } else {
@@ -775,21 +775,21 @@ struct DashboardView: View {
     private var memoryDetails: some View {
         let memory = performance.snapshot.memory
         if settings.isDetailEnabled(.memoryComposition) {
-            DetailSection(title: "内存构成") {
-                DetailValueRow(label: "App/匿名", value: bytes(memory.app))
-                DetailValueRow(label: "联动内存", value: bytes(memory.wired))
-                DetailValueRow(label: "已压缩", value: bytes(memory.compressed))
-                DetailValueRow(label: "文件缓存", value: bytes(memory.cached))
+            DetailSection(title: String(localized: "内存构成")) {
+                DetailValueRow(label: String(localized: "App/匿名"), value: bytes(memory.app))
+                DetailValueRow(label: String(localized: "联动内存"), value: bytes(memory.wired))
+                DetailValueRow(label: String(localized: "已压缩"), value: bytes(memory.compressed))
+                DetailValueRow(label: String(localized: "文件缓存"), value: bytes(memory.cached))
             }
         }
         if settings.isDetailEnabled(.memorySwap) {
-            DetailSection(title: "交换内存") {
-                DetailValueRow(label: "已使用", value: bytes(memory.swapUsed))
-                DetailValueRow(label: "总计", value: bytes(memory.swapTotal))
+            DetailSection(title: String(localized: "交换内存")) {
+                DetailValueRow(label: String(localized: "已使用"), value: bytes(memory.swapUsed))
+                DetailValueRow(label: String(localized: "总计"), value: bytes(memory.swapTotal))
             }
         }
         if settings.isDetailEnabled(.memoryProcesses) {
-            ProcessActivityList(title: "高内存进程", processes: performance.snapshot.topMemoryProcesses) {
+            ProcessActivityList(title: String(localized: "高内存进程"), processes: performance.snapshot.topMemoryProcesses) {
                 bytes($0.memoryBytes)
             }
         }
@@ -800,25 +800,25 @@ struct DashboardView: View {
     private var diskDetails: some View {
         let disk = performance.snapshot.disk
         if settings.isDetailEnabled(.diskCapacity) {
-            DetailSection(title: "存储容量") {
-                DetailValueRow(label: "可用", value: bytes(disk.availableBytes))
-                DetailValueRow(label: "总计", value: bytes(disk.totalBytes))
+            DetailSection(title: String(localized: "存储容量")) {
+                DetailValueRow(label: String(localized: "可用"), value: bytes(disk.availableBytes))
+                DetailValueRow(label: String(localized: "总计"), value: bytes(disk.totalBytes))
             }
         }
         if settings.isDetailEnabled(.diskIOPS) {
-            DetailSection(title: "实时 IOPS") {
-                DetailValueRow(label: "读取", value: decimal(disk.readIOPS) + " 次/s")
-                DetailValueRow(label: "写入", value: decimal(disk.writeIOPS) + " 次/s")
+            DetailSection(title: String(localized: "实时 IOPS")) {
+                DetailValueRow(label: String(localized: "读取"), value: String(format: String(localized: "%@ 次/s"), decimal(disk.readIOPS)))
+                DetailValueRow(label: String(localized: "写入"), value: String(format: String(localized: "%@ 次/s"), decimal(disk.writeIOPS)))
             }
         }
         if settings.isDetailEnabled(.diskTotals) {
-            DetailSection(title: "启动以来累计") {
-                DetailValueRow(label: "读取", value: bytes(disk.bytesRead))
-                DetailValueRow(label: "写入", value: bytes(disk.bytesWritten))
+            DetailSection(title: String(localized: "启动以来累计")) {
+                DetailValueRow(label: String(localized: "读取"), value: bytes(disk.bytesRead))
+                DetailValueRow(label: String(localized: "写入"), value: bytes(disk.bytesWritten))
             }
         }
         if settings.isDetailEnabled(.diskProcesses) {
-            ProcessActivityList(title: "高磁盘读写进程", processes: performance.snapshot.topDiskProcesses) {
+            ProcessActivityList(title: String(localized: "高磁盘读写进程"), processes: performance.snapshot.topDiskProcesses) {
                 "↓ \(rate($0.diskReadPerSecond))  ↑ \(rate($0.diskWritePerSecond))"
             }
         }
@@ -829,28 +829,28 @@ struct DashboardView: View {
     private var networkDetails: some View {
         let network = performance.snapshot.network
         if settings.isDetailEnabled(.networkInterface) {
-            DetailSection(title: "当前连接") {
-                DetailValueRow(label: "接口", value: network.interface)
-                DetailValueRow(label: "类型", value: network.interfaceType)
+            DetailSection(title: String(localized: "当前连接")) {
+                DetailValueRow(label: String(localized: "接口"), value: network.interface)
+                DetailValueRow(label: String(localized: "类型"), value: network.interfaceType)
             }
         }
         if settings.isDetailEnabled(.networkPackets) {
-            DetailSection(title: "数据包") {
-                DetailValueRow(label: "接收/发送", value: "\(network.receivedPackets) / \(network.sentPackets)")
-                DetailValueRow(label: "错误/丢包", value: "\(network.inputErrors + network.outputErrors) / \(network.drops)")
+            DetailSection(title: String(localized: "数据包")) {
+                DetailValueRow(label: String(localized: "接收/发送"), value: "\(network.receivedPackets) / \(network.sentPackets)")
+                DetailValueRow(label: String(localized: "错误/丢包"), value: "\(network.inputErrors + network.outputErrors) / \(network.drops)")
             }
         }
         if settings.isDetailEnabled(.networkTotals) {
-            DetailSection(title: "累计流量") {
-                DetailValueRow(label: "下载", value: bytes(network.receivedBytes))
-                DetailValueRow(label: "上传", value: bytes(network.sentBytes))
+            DetailSection(title: String(localized: "累计流量")) {
+                DetailValueRow(label: String(localized: "下载"), value: bytes(network.receivedBytes))
+                DetailValueRow(label: String(localized: "上传"), value: bytes(network.sentBytes))
             }
         }
         if settings.isDetailEnabled(.networkLatency) {
-            DetailSection(title: "网络延迟 · 1.1.1.1:443") {
+            DetailSection(title: String(localized: "网络延迟 · 1.1.1.1:443")) {
                 DetailValueRow(
-                    label: "TCP 建连",
-                    value: network.latencyMilliseconds.map { decimal($0) + " ms" } ?? "测试中…"
+                    label: String(localized: "TCP 建连"),
+                    value: network.latencyMilliseconds.map { decimal($0) + " ms" } ?? String(localized: "测试中…")
                 )
             }
         }
@@ -861,53 +861,53 @@ struct DashboardView: View {
     private var thermalDetails: some View {
         let temperatures = performance.snapshot.thermal.temperatures
         if settings.isDetailEnabled(.thermalDuration) {
-            DetailSection(title: "热状态") {
-                DetailValueRow(label: "当前等级", value: thermalTitle, tint: thermalColor)
-                DetailValueRow(label: "已持续", value: duration(since: performance.snapshot.thermal.stateSince))
+            DetailSection(title: String(localized: "热状态")) {
+                DetailValueRow(label: String(localized: "当前等级"), value: thermalTitle, tint: thermalColor)
+                DetailValueRow(label: String(localized: "已持续"), value: duration(since: performance.snapshot.thermal.stateSince))
             }
         }
         if settings.isDetailEnabled(.thermalCPU) {
-            DetailSection(title: "CPU 温度") {
+            DetailSection(title: String(localized: "CPU 温度")) {
                 temperatureSummaryRows(temperatures.cpu)
-                Text("汇总本机可用且通过有效性检查的 CPU 传感器。")
+                Text(String(localized: "汇总本机可用且通过有效性检查的 CPU 传感器。"))
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
                     .panelTextReadability(.secondary)
             }
         }
         if settings.isDetailEnabled(.thermalGPU) {
-            DetailSection(title: "GPU 温度") {
+            DetailSection(title: String(localized: "GPU 温度")) {
                 temperatureSummaryRows(temperatures.gpu)
             }
         }
         if settings.isDetailEnabled(.thermalMemory) {
-            DetailSection(title: "内存温度") {
+            DetailSection(title: String(localized: "内存温度")) {
                 temperatureSummaryRows(temperatures.memory)
             }
         }
         if settings.isDetailEnabled(.thermalStorage) {
-            DetailSection(title: "存储温度") {
+            DetailSection(title: String(localized: "存储温度")) {
                 DetailValueRow(label: "NAND", value: celsius(temperatures.nandCelsius))
             }
         }
         if settings.isDetailEnabled(.thermalBattery) {
-            DetailSection(title: "电池温度") {
+            DetailSection(title: String(localized: "电池温度")) {
                 temperatureSummaryRows(temperatures.battery)
             }
         }
         if settings.isDetailEnabled(.thermalAirflow) {
-            DetailSection(title: "风道温度") {
-                DetailValueRow(label: "左侧", value: celsius(temperatures.airflowLeftCelsius))
-                DetailValueRow(label: "右侧", value: celsius(temperatures.airflowRightCelsius))
+            DetailSection(title: String(localized: "风道温度")) {
+                DetailValueRow(label: String(localized: "左侧"), value: celsius(temperatures.airflowLeftCelsius))
+                DetailValueRow(label: String(localized: "右侧"), value: celsius(temperatures.airflowRightCelsius))
             }
         }
         if settings.isDetailEnabled(.thermalWireless) {
-            DetailSection(title: "无线模块温度") {
+            DetailSection(title: String(localized: "无线模块温度")) {
                 DetailValueRow(label: "Wi-Fi", value: celsius(temperatures.wirelessCelsius))
             }
         }
         if settings.isDetailEnabled(.thermalPMU) {
-            DetailSection(title: "电源管理温度") {
+            DetailSection(title: String(localized: "电源管理温度")) {
                 temperatureSummaryRows(temperatures.powerManagement)
             }
         }
@@ -917,11 +917,11 @@ struct DashboardView: View {
     @ViewBuilder
     private func temperatureSummaryRows(_ summary: TemperatureSummary?) -> some View {
         if let summary {
-            DetailValueRow(label: "平均", value: celsius(summary.averageCelsius))
-            DetailValueRow(label: "最高", value: celsius(summary.maximumCelsius))
-            DetailValueRow(label: "有效传感器", value: "\(summary.sensorCount) 个")
+            DetailValueRow(label: String(localized: "平均"), value: celsius(summary.averageCelsius))
+            DetailValueRow(label: String(localized: "最高"), value: celsius(summary.maximumCelsius))
+            DetailValueRow(label: String(localized: "有效传感器"), value: String(format: String(localized: "%@ 个"), String(summary.sensorCount)))
         } else {
-            Text("此机型未返回有效温度")
+            Text(String(localized: "此机型未返回有效温度"))
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .panelTextReadability(.secondary)
@@ -931,77 +931,77 @@ struct DashboardView: View {
     @ViewBuilder
     private func batteryDetails(_ battery: BatterySnapshot) -> some View {
         if settings.isDetailEnabled(.batteryRemaining) {
-            DetailSection(title: "剩余时间") {
+            DetailSection(title: String(localized: "剩余时间")) {
                 if battery.isCharging {
-                    DetailValueRow(label: "充满预计", value: minutes(battery.timeToFullMinutes))
+                    DetailValueRow(label: String(localized: "充满预计"), value: minutes(battery.timeToFullMinutes))
                 } else if battery.isOnACPower {
-                    DetailValueRow(label: "电源", value: "已连接，未充电")
+                    DetailValueRow(label: String(localized: "电源"), value: String(localized: "已连接，未充电"))
                 } else {
-                    DetailValueRow(label: "可用预计", value: minutes(battery.timeToEmptyMinutes))
+                    DetailValueRow(label: String(localized: "可用预计"), value: minutes(battery.timeToEmptyMinutes))
                 }
             }
         }
         if settings.isDetailEnabled(.batteryHealth) {
-            DetailSection(title: "电池健康") {
-                DetailValueRow(label: "状态", value: batteryHealth(battery.health))
+            DetailSection(title: String(localized: "电池健康")) {
+                DetailValueRow(label: String(localized: "状态"), value: batteryHealth(battery.health))
                 DetailValueRow(
-                    label: "最大容量",
-                    value: battery.maximumCapacityPercent.map(percent) ?? "不可用"
+                    label: String(localized: "最大容量"),
+                    value: battery.maximumCapacityPercent.map(percent) ?? String(localized: "不可用")
                 )
             }
         }
         if settings.isDetailEnabled(.batteryCycles) {
-            DetailSection(title: "循环") {
-                DetailValueRow(label: "循环次数", value: battery.cycleCount.map { "\($0) 次" } ?? "不可用")
+            DetailSection(title: String(localized: "循环")) {
+                DetailValueRow(label: String(localized: "循环次数"), value: battery.cycleCount.map { String(format: String(localized: "%@ 次"), String($0)) } ?? String(localized: "不可用"))
             }
         }
         if settings.isDetailEnabled(.batteryElectrical) {
-            DetailSection(title: "实时功率") {
+            DetailSection(title: String(localized: "实时功率")) {
                 DetailValueRow(
-                    label: "系统总功率",
-                    value: battery.systemPowerWatts.map(watts) ?? "传感器不可用"
+                    label: String(localized: "系统总功率"),
+                    value: battery.systemPowerWatts.map(watts) ?? String(localized: "传感器不可用")
                 )
                 DetailValueRow(
-                    label: "直流输入",
-                    value: battery.dcInputPowerWatts.map(watts) ?? "传感器不可用"
+                    label: String(localized: "直流输入"),
+                    value: battery.dcInputPowerWatts.map(watts) ?? String(localized: "传感器不可用")
                 )
                 DetailValueRow(
-                    label: "电池充放电",
+                    label: String(localized: "电池充放电"),
                     value: battery.batteryPowerWatts.map(watts)
-                        ?? battery.estimatedBatteryPowerWatts.map { watts($0) + "（估算）" }
-                        ?? "不可用"
+                        ?? battery.estimatedBatteryPowerWatts.map { String(format: String(localized: "%@（估算）"), watts($0)) }
+                        ?? String(localized: "不可用")
                 )
                 Text(
                     battery.systemPowerWatts != nil || battery.dcInputPowerWatts != nil
-                        ? "来自本机 SMC 实时传感器，仅代表 Mac 内部功率。"
-                        : "此机型未公开整机功率传感器，当前仅能计算电池侧功率。"
+                        ? String(localized: "来自本机 SMC 实时传感器，仅代表 Mac 内部功率。")
+                        : String(localized: "此机型未公开整机功率传感器，当前仅能计算电池侧功率。")
                 )
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .panelTextReadability(.secondary)
             }
-            DetailSection(title: "电气信息") {
-                DetailValueRow(label: "电压", value: battery.voltageVolts.map { decimal($0) + " V" } ?? "不可用")
-                DetailValueRow(label: "电流", value: battery.amperageAmps.map { decimal($0) + " A" } ?? "不可用")
+            DetailSection(title: String(localized: "电气信息")) {
+                DetailValueRow(label: String(localized: "电压"), value: battery.voltageVolts.map { decimal($0) + " V" } ?? String(localized: "不可用"))
+                DetailValueRow(label: String(localized: "电流"), value: battery.amperageAmps.map { decimal($0) + " A" } ?? String(localized: "不可用"))
             }
         }
         if settings.isDetailEnabled(.batteryLowPower) {
-            DetailSection(title: "电源模式") {
-                DetailValueRow(label: "低电量模式", value: battery.isLowPowerMode ? "已开启" : "已关闭")
+            DetailSection(title: String(localized: "电源模式")) {
+                DetailValueRow(label: String(localized: "低电量模式"), value: battery.isLowPowerMode ? String(localized: "已开启") : String(localized: "已关闭"))
             }
         }
         if !hasEnabledDetail(for: .battery) { noDetails }
     }
 
     private var noDetails: some View {
-        Text("未选择详细项目，可在设置中启用。")
+        Text(String(localized: "未选择详细项目，可在设置中启用。"))
             .font(.caption)
             .foregroundStyle(.tertiary)
             .panelTextReadability(.secondary)
     }
 
     private var samplingPlaceholder: some View {
-        Text("正在采样…")
+        Text(String(localized: "正在采样…"))
             .font(.caption)
             .foregroundStyle(.tertiary)
             .panelTextReadability(.secondary)
@@ -1025,7 +1025,7 @@ struct DashboardView: View {
     }
 
     private func celsius(_ value: Double?) -> String {
-        value.map(celsius) ?? "传感器不可用"
+        value.map(celsius) ?? String(localized: "传感器不可用")
     }
 
     private func celsius(_ value: Double) -> String {
@@ -1051,39 +1051,39 @@ struct DashboardView: View {
     }
 
     private func minutes(_ value: Int?) -> String {
-        guard let value else { return "正在估算" }
-        return value >= 60 ? "\(value / 60) 小时 \(value % 60) 分" : "\(value) 分钟"
+        guard let value else { return String(localized: "正在估算") }
+        return value >= 60 ? String(format: String(localized: "%@ 小时 %@ 分"), String(value / 60), String(value % 60)) : String(format: String(localized: "%@ 分钟"), String(value))
     }
 
     private func duration(since date: Date) -> String {
         let seconds = max(0, Int(Date().timeIntervalSince(date)))
-        if seconds >= 3600 { return "\(seconds / 3600) 小时 \((seconds % 3600) / 60) 分" }
-        if seconds >= 60 { return "\(seconds / 60) 分钟" }
-        return "\(seconds) 秒"
+        if seconds >= 3600 { return String(format: String(localized: "%@ 小时 %@ 分"), String(seconds / 3600), String((seconds % 3600) / 60)) }
+        if seconds >= 60 { return String(format: String(localized: "%@ 分钟"), String(seconds / 60)) }
+        return String(format: String(localized: "%@ 秒"), String(seconds))
     }
 
     private func batterySummary(_ battery: BatterySnapshot) -> String {
-        if battery.isCharging { return "正在充电" }
-        return battery.isOnACPower ? "已连接电源" : "正在使用电池"
+        if battery.isCharging { return String(localized: "正在充电") }
+        return battery.isOnACPower ? String(localized: "已连接电源") : String(localized: "正在使用电池")
     }
 
     private func batteryHealth(_ value: String?) -> String {
         switch value {
-        case "Good": "正常"
-        case "Fair": "一般"
-        case "Poor": "建议维修"
+        case "Good": String(localized: "正常")
+        case "Fair": String(localized: "一般")
+        case "Poor": String(localized: "建议维修")
         case let value?: value
-        case nil: "不可用"
+        case nil: String(localized: "不可用")
         }
     }
 
     private var thermalTitle: String {
         switch performance.snapshot.thermal.state {
-        case .nominal: "正常"
-        case .fair: "偏热"
-        case .serious: "较热"
-        case .critical: "严重"
-        @unknown default: "未知"
+        case .nominal: String(localized: "正常")
+        case .fair: String(localized: "偏热")
+        case .serious: String(localized: "较热")
+        case .critical: String(localized: "严重")
+        @unknown default: String(localized: "未知")
         }
     }
 

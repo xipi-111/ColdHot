@@ -117,13 +117,21 @@ enum MemoryPressure: String {
     case normal = "正常"
     case warning = "警告"
     case critical = "严重"
+
+    var title: String {
+        switch self {
+        case .normal: String(localized: "正常")
+        case .warning: String(localized: "警告")
+        case .critical: String(localized: "严重")
+        }
+    }
 }
 
 struct NetworkSnapshot {
     var download = 0.0
     var upload = 0.0
     var interface = "—"
-    var interfaceType = "未知"
+    var interfaceType = String(localized: "未知")
     var receivedBytes: UInt64 = 0
     var sentBytes: UInt64 = 0
     var receivedPackets: UInt64 = 0

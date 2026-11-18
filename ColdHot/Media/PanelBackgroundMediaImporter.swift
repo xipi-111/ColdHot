@@ -38,27 +38,27 @@ enum PanelBackgroundImportError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .gifTooLarge:
-            "GIF 文件超过 100 MB，未更换当前背景。"
+            String(localized: "GIF 文件超过 100 MB，未更换当前背景。")
         case .videoTooLarge:
-            "视频文件超过 1 GB，未更换当前背景。"
+            String(localized: "视频文件超过 1 GB，未更换当前背景。")
         case .unreadableMedia:
-            "无法读取所选文件，请确认文件未损坏。"
+            String(localized: "无法读取所选文件，请确认文件未损坏。")
         case .missingVideoTrack:
-            "所选文件不包含视频轨道。"
+            String(localized: "所选文件不包含视频轨道。")
         case .unsupportedVideo:
-            "当前 Mac 无法播放这个视频或其编码格式。"
+            String(localized: "当前 Mac 无法播放这个视频或其编码格式。")
         case .gifConversionFailed:
-            "无法转换这个 GIF，请选择其他文件。"
+            String(localized: "无法转换这个 GIF，请选择其他文件。")
         case .unableToCreatePoster:
-            "无法从动态背景生成静态封面。"
+            String(localized: "无法从动态背景生成静态封面。")
         case .unableToWrite:
-            "无法写入背景文件，请检查本地存储空间后重试。"
+            String(localized: "无法写入背景文件，请检查本地存储空间后重试。")
         case .operationInProgress:
-            "另一项背景操作正在进行，请稍后重试。"
+            String(localized: "另一项背景操作正在进行，请稍后重试。")
         case .rollbackFailed:
-            "背景操作失败，且无法完整恢复先前状态。已保留可安全读取的本地背景数据。"
+            String(localized: "背景操作失败，且无法完整恢复先前状态。已保留可安全读取的本地背景数据。")
         case .cleanupFailed:
-            "背景已更新，但旧背景文件未能完全清理。"
+            String(localized: "背景已更新，但旧背景文件未能完全清理。")
         }
     }
 }

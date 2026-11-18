@@ -13,7 +13,7 @@ enum BuildVariant {
 #endif
 
     static var isAppStore: Bool { channel == .appStore }
-    static var displayName: String { isAppStore ? "App Store 版" : "官网版" }
+    static var displayName: String { isAppStore ? String(localized: "App Store 版") : String(localized: "官网版") }
 
     static var availableMetrics: Set<MetricKind> {
         if isAppStore {
@@ -63,8 +63,8 @@ enum BuildVariant {
 
     static var settingsSummary: String {
         if isAppStore {
-            return "App Store 版仅使用公开系统接口；温度传感器、风扇、整机功率、进程排行、GPU/磁盘实时统计与 Dock 控制只在官网版提供。"
+            return String(localized: "App Store 版仅使用公开系统接口；温度传感器、风扇、整机功率、进程排行、GPU/磁盘实时统计与 Dock 控制只在官网版提供。")
         }
-        return "官网版包含完整的本机传感器、进程排行与 Dock 快捷控制；部分高级读数依赖 macOS 未公开接口。"
+        return String(localized: "官网版包含完整的本机传感器、进程排行与 Dock 快捷控制；部分高级读数依赖 macOS 未公开接口。")
     }
 }

@@ -229,7 +229,7 @@ final class SystemSampler {
             let builtIn = CGDisplayIsBuiltin(displayID) != 0
             return DisplaySnapshot(
                 id: displayID,
-                name: builtIn ? "内建显示器" : "外接显示器",
+                name: builtIn ? String(localized: "内建显示器") : String(localized: "外接显示器"),
                 width: mode.width,
                 height: mode.height,
                 refreshRate: mode.refreshRate > 0 ? mode.refreshRate : nil
@@ -344,11 +344,11 @@ final class SystemSampler {
     }
 
     private func interfaceType(_ name: String) -> String {
-        if name.hasPrefix("utun") { return "VPN 隧道" }
-        if name.hasPrefix("en") { return "Wi-Fi / 以太网" }
-        if name.hasPrefix("bridge") { return "网络桥接" }
+        if name.hasPrefix("utun") { return String(localized: "VPN 隧道") }
+        if name.hasPrefix("en") { return String(localized: "Wi-Fi / 以太网") }
+        if name.hasPrefix("bridge") { return String(localized: "网络桥接") }
         if name.hasPrefix("awdl") { return "Apple Wireless Direct Link" }
-        return "网络接口"
+        return String(localized: "网络接口")
     }
 
     private func networkCounters(for target: String) -> NetworkCounters? {

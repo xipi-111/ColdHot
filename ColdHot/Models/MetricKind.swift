@@ -7,6 +7,15 @@ enum MetricCategory: String, CaseIterable, Identifiable {
     case power = "电源与温控"
 
     var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .compute: String(localized: "计算")
+        case .resources: String(localized: "系统资源")
+        case .connectivity: String(localized: "连接")
+        case .power: String(localized: "电源与温控")
+        }
+    }
 }
 
 enum MetricKind: String, CaseIterable, Codable, Identifiable, Hashable {
@@ -24,23 +33,23 @@ enum MetricKind: String, CaseIterable, Codable, Identifiable, Hashable {
         switch self {
         case .cpu: "CPU"
         case .gpu: "GPU"
-        case .memory: "内存"
-        case .disk: "磁盘"
-        case .network: "网络"
-        case .thermal: "热状态"
-        case .battery: "电池"
+        case .memory: String(localized: "内存")
+        case .disk: String(localized: "磁盘")
+        case .network: String(localized: "网络")
+        case .thermal: String(localized: "热状态")
+        case .battery: String(localized: "电池")
         }
     }
 
     var explanation: String {
         switch self {
-        case .cpu: "处理器使用率、负载和高占用进程"
-        case .gpu: "Apple GPU 利用率和显示环境"
-        case .memory: "物理内存、压力、交换与进程占用"
-        case .disk: "存储吞吐、容量、IOPS 和进程读写"
-        case .network: "主接口的收发速度与连接质量"
-        case .thermal: "系统热压力等级与按需温度传感器"
-        case .battery: "电量、健康、循环次数与电气信息"
+        case .cpu: String(localized: "处理器使用率、负载和高占用进程")
+        case .gpu: String(localized: "Apple GPU 利用率和显示环境")
+        case .memory: String(localized: "物理内存、压力、交换与进程占用")
+        case .disk: String(localized: "存储吞吐、容量、IOPS 和进程读写")
+        case .network: String(localized: "主接口的收发速度与连接质量")
+        case .thermal: String(localized: "系统热压力等级与按需温度传感器")
+        case .battery: String(localized: "电量、健康、循环次数与电气信息")
         }
     }
 
@@ -139,58 +148,58 @@ enum MetricDetail: String, CaseIterable, Codable, Identifiable, Hashable {
 
     var title: String {
         switch self {
-        case .cpuBreakdown: "用户/系统/空闲"
-        case .cpuLoad: "1、5、15 分钟负载"
-        case .cpuCores: "每核心使用率"
-        case .cpuProcesses: "高 CPU 进程"
-        case .cpuWakeups: "高唤醒进程"
-        case .gpuBreakdown: "Renderer/Tiler 利用率"
-        case .gpuDisplays: "显示器与刷新率"
-        case .memoryComposition: "内存构成"
-        case .memorySwap: "交换内存"
-        case .memoryProcesses: "高内存进程"
-        case .diskCapacity: "容量与剩余空间"
-        case .diskIOPS: "读写 IOPS"
-        case .diskTotals: "累计读写"
-        case .diskProcesses: "高磁盘读写进程"
-        case .networkInterface: "接口与连接类型"
-        case .networkPackets: "数据包、错误和丢包"
-        case .networkTotals: "累计流量"
-        case .networkLatency: "网络延迟主动测试"
-        case .thermalDuration: "状态持续时间"
-        case .thermalCPU: "CPU 温度"
-        case .thermalGPU: "GPU 温度"
-        case .thermalMemory: "内存温度"
-        case .thermalStorage: "NAND 温度"
-        case .thermalBattery: "电池温度"
-        case .thermalAirflow: "左右风道温度"
-        case .thermalWireless: "Wi-Fi 温度"
-        case .thermalPMU: "电源管理温度"
-        case .batteryRemaining: "剩余充电/使用时间"
-        case .batteryHealth: "健康与容量"
-        case .batteryCycles: "循环次数"
-        case .batteryElectrical: "实时功率与电气信息"
-        case .batteryLowPower: "低电量模式"
+        case .cpuBreakdown: String(localized: "用户/系统/空闲")
+        case .cpuLoad: String(localized: "1、5、15 分钟负载")
+        case .cpuCores: String(localized: "每核心使用率")
+        case .cpuProcesses: String(localized: "高 CPU 进程")
+        case .cpuWakeups: String(localized: "高唤醒进程")
+        case .gpuBreakdown: String(localized: "Renderer/Tiler 利用率")
+        case .gpuDisplays: String(localized: "显示器与刷新率")
+        case .memoryComposition: String(localized: "内存构成")
+        case .memorySwap: String(localized: "交换内存")
+        case .memoryProcesses: String(localized: "高内存进程")
+        case .diskCapacity: String(localized: "容量与剩余空间")
+        case .diskIOPS: String(localized: "读写 IOPS")
+        case .diskTotals: String(localized: "累计读写")
+        case .diskProcesses: String(localized: "高磁盘读写进程")
+        case .networkInterface: String(localized: "接口与连接类型")
+        case .networkPackets: String(localized: "数据包、错误和丢包")
+        case .networkTotals: String(localized: "累计流量")
+        case .networkLatency: String(localized: "网络延迟主动测试")
+        case .thermalDuration: String(localized: "状态持续时间")
+        case .thermalCPU: String(localized: "CPU 温度")
+        case .thermalGPU: String(localized: "GPU 温度")
+        case .thermalMemory: String(localized: "内存温度")
+        case .thermalStorage: String(localized: "NAND 温度")
+        case .thermalBattery: String(localized: "电池温度")
+        case .thermalAirflow: String(localized: "左右风道温度")
+        case .thermalWireless: String(localized: "Wi-Fi 温度")
+        case .thermalPMU: String(localized: "电源管理温度")
+        case .batteryRemaining: String(localized: "剩余充电/使用时间")
+        case .batteryHealth: String(localized: "健康与容量")
+        case .batteryCycles: String(localized: "循环次数")
+        case .batteryElectrical: String(localized: "实时功率与电气信息")
+        case .batteryLowPower: String(localized: "低电量模式")
         }
     }
 
     var explanation: String {
         switch self {
         case .networkLatency:
-            "展开网络卡片时连接 1.1.1.1:443，每约 10 秒测试一次"
+            String(localized: "展开网络卡片时连接 1.1.1.1:443，每约 10 秒测试一次")
         case .cpuProcesses, .cpuWakeups, .memoryProcesses, .diskProcesses:
-            "仅在对应卡片展开时约每 3 秒更新"
+            String(localized: "仅在对应卡片展开时约每 3 秒更新")
         case .cpuCores:
-            "仅在 CPU 卡片展开时采集"
+            String(localized: "仅在 CPU 卡片展开时采集")
         case .batteryCycles:
-            "从 Mac 电池控制器读取当前循环次数"
+            String(localized: "从 Mac 电池控制器读取当前循环次数")
         case .batteryElectrical:
-            "优先读取 SMC 系统、输入和电池功率；不支持时回退到电池侧估算"
+            String(localized: "优先读取 SMC 系统、输入和电池功率；不支持时回退到电池侧估算")
         case .thermalCPU, .thermalGPU, .thermalMemory, .thermalStorage,
              .thermalBattery, .thermalAirflow, .thermalWireless, .thermalPMU:
-            "仅在展开热状态卡片时读取可用的 SMC/HID 传感器"
+            String(localized: "仅在展开热状态卡片时读取可用的 SMC/HID 传感器")
         default:
-            "仅在展开该指标时采集或显示"
+            String(localized: "仅在展开该指标时采集或显示")
         }
     }
 

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		K10000000000000000000001 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = K40000000000000000000001 /* Localizable.strings */; };
 		A10000000000000000000001 /* ColdHotApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* ColdHotApp.swift */; };
 		A10000000000000000000002 /* MetricKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* MetricKind.swift */; };
 		A10000000000000000000003 /* MonitorSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* MonitorSettings.swift */; };
@@ -39,6 +40,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		K20000000000000000000001 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
+		K20000000000000000000002 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		A20000000000000000000000 /* ColdHot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ColdHot.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A20000000000000000000001 /* ColdHotApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColdHotApp.swift; sourceTree = "<group>"; };
 		A20000000000000000000002 /* MetricKind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricKind.swift; sourceTree = "<group>"; };
@@ -172,6 +175,7 @@
 		A40000000000000000000007 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				K40000000000000000000001 /* Localizable.strings */,
 				A2000000000000000000000F /* Assets.xcassets */,
 				A20000000000000000000010 /* PrivacyInfo.xcprivacy */,
 				A20000000000000000000011 /* ColdHot-AppStore.entitlements */,
@@ -241,6 +245,7 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
+				"zh-Hans",
 				Base,
 			);
 			mainGroup = A40000000000000000000000;
@@ -261,6 +266,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				K10000000000000000000001 /* Localizable.strings in Resources */,
 				A1000000000000000000000F /* Assets.xcassets in Resources */,
 				A10000000000000000000010 /* PrivacyInfo.xcprivacy in Resources */,
 			);
@@ -303,6 +309,18 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXVariantGroup section */
+		K40000000000000000000001 /* Localizable.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				K20000000000000000000001 /* en */,
+				K20000000000000000000002 /* zh-Hans */,
+			);
+			name = Localizable.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
 		A70000000000000000000001 /* Debug */ = {
@@ -415,7 +433,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 25;
+				CURRENT_PROJECT_VERSION = 28;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -427,7 +445,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.5.1;
+				MARKETING_VERSION = 1.6.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.xipiyoung.ColdHot;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -439,7 +457,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 25;
+				CURRENT_PROJECT_VERSION = 28;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -451,7 +469,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.5.1;
+				MARKETING_VERSION = 1.6.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.xipiyoung.ColdHot;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

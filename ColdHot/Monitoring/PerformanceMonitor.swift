@@ -549,8 +549,12 @@ final class ThresholdNotificationController {
         lastActivationSentAt[kind] = now
 
         let content = UNMutableNotificationContent()
-        content.title = "\(kind.title)达到阈值"
-        content.body = "当前 \(measurement.valueText)，设定阈值 \(formattedThreshold(kind, threshold))."
+        content.title = String(format: String(localized: "%@达到阈值"), kind.title)
+        content.body = String(
+            format: String(localized: "当前 %@，设定阈值 %@."),
+            measurement.valueText,
+            formattedThreshold(kind, threshold)
+        )
         content.sound = .default
         add(content, identifier: "coldhot.threshold.\(kind.rawValue).\(now.timeIntervalSince1970)")
     }
@@ -560,8 +564,8 @@ final class ThresholdNotificationController {
         measurement: ThresholdMeasurement
     ) {
         let content = UNMutableNotificationContent()
-        content.title = "\(kind.title)已恢复"
-        content.body = "当前读数为 \(measurement.valueText)。"
+        content.title = String(format: String(localized: "%@已恢复"), kind.title)
+        content.body = String(format: String(localized: "当前读数为 %@。"), measurement.valueText)
         add(
             content,
             identifier: "coldhot.recovered.\(kind.rawValue).\(Date().timeIntervalSince1970)"
@@ -583,10 +587,10 @@ final class ThresholdNotificationController {
     ) -> String {
         if kind == .thermalState {
             switch Int(value) {
-            case 1: return "偏热"
-            case 2: return "较热"
-            case 3: return "严重"
-            default: return "正常"
+            case 1: return String(localized: "偏热")
+            case 2: return String(localized: "较热")
+            case 3: return String(localized: "严重")
+            default: return String(localized: "正常")
             }
         }
         let numeric = value.rounded() == value

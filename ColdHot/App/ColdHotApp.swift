@@ -133,7 +133,7 @@ private struct MenuBarStatusLabel: View {
             .accessibilityLabel(MenuBarStatusRenderer.accessibilityLabel(for: alert))
         } else {
             Image(nsImage: MenuBarStatusRenderer.pulseImage())
-                .accessibilityLabel("ColdHot 性能监控")
+                .accessibilityLabel(String(localized: "ColdHot 性能监控"))
         }
     }
 }
